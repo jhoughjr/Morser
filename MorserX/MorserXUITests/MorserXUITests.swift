@@ -1,13 +1,13 @@
 //
-//  MorserUITests.swift
-//  MorserUITests
+//  MorserXUITests.swift
+//  MorserXUITests
 //
 //  Created by Jimmy Hough Jr on 12/13/24.
 //
 
 import XCTest
 
-final class MorserUITests: XCTestCase {
+final class MorserXUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.

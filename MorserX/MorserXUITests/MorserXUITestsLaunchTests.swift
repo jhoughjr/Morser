@@ -1,13 +1,13 @@
 //
-//  MorserUITestsLaunchTests.swift
-//  MorserUITests
+//  MorserXUITestsLaunchTests.swift
+//  MorserXUITests
 //
 //  Created by Jimmy Hough Jr on 12/13/24.
 //
 
 import XCTest
 
-final class MorserUITestsLaunchTests: XCTestCase {
+final class MorserXUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

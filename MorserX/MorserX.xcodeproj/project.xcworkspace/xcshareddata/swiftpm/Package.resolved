@@ -1,0 +1,42 @@
+{
+  "originHash" : "411ffa2d62aa198aae1bb2bde89b7106760fea87374d2ca0b6fdc5698d99a536",
+  "pins" : [
+    {
+      "identity" : "audiokit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/AudioKit/AudioKit.git",
+      "state" : {
+        "revision" : "2ebd422855e4645d3169f83d1765d1c8196b4f46",
+        "version" : "5.6.4"
+      }
+    },
+    {
+      "identity" : "lullaby",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jtodaone/Lullaby.git",
+      "state" : {
+        "revision" : "f1f42ec442d7711ecbe457f17dc159962d65731c",
+        "version" : "0.2.3"
+      }
+    },
+    {
+      "identity" : "morse.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jhoughjr/Morse.swift.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "ad64560faccab6583783a4b3122056618ace9dca"
+      }
+    },
+    {
+      "identity" : "swift-collections",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-collections.git",
+      "state" : {
+        "revision" : "9d8719c8bebdc79740b6969c912ac706eb721d7a",
+        "version" : "0.0.7"
+      }
+    }
+  ],
+  "version" : 3
+}
