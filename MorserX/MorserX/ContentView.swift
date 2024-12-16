@@ -53,15 +53,13 @@ struct ContentView: View {
             HStack {
                 Button {
                     Task {
-                         morseController.player.sound(morse: morseController.morseCode)
+                        await morseController.player.sound(morse: morseController.morseCode)
                     }
 
                     
                 } label: {
                     Text("Play Test")
                 }
-                .disabled(morseController.player.isPlaying)
-             
             }
 
         }

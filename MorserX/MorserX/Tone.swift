@@ -19,6 +19,13 @@ import AVFAudio
 
 class Tone {
     
+    struct SequencedTone {
+        let id:Int
+        let tone:Tone
+        let previous:Tone?
+        let next:Tone?
+    }
+    
     struct Signals {
         
         static let twoPi = 2 * Float.pi
@@ -56,8 +63,10 @@ class Tone {
         }
     }
     
-    public class Player {
+    public actor Player: ObservableObject {
+        var playedTones: [Tone] = []
         var isPlaying = false
+        
         let engine = AudioEngine()
         let osc = PlaygroundOscillator()
         
@@ -69,21 +78,31 @@ class Tone {
             osc.amplitude = tone.amplitude
         }
         
-        private func play(tone: Tone) {
+        private func play(tone: Tone) -> Bool {
+            if isPlaying { return false }
+            
             isPlaying = true
+            
             print("Playing \(tone.description)")
             configureEngine(for: tone)
             osc.start()
             CFRunLoopRunInMode(.defaultMode, CFTimeInterval(tone.duration), false)
             osc.stop()
             isPlaying = false
+            return true
         }
         
-        private func assembledTones(for input: String) -> [Tone] {
+        private func calculatedDuration(for tones:[Tone]) -> TimeInterval {
+            let duration = tones.reduce(0) { $0 + $1.duration }
+            return duration
+        }
+        
+        private func assembledTones(for input: String, using timing: [String:Double] = Morse.Symbols.Timings()) -> [Tone] {
             var tones = [Tone]()
             let enumerated = input.enumerated()
-            let dit = Float(Morse.Symbols.ditTime())
-            let dah = Float(3 * dit)
+            
+            let dit = Morse.Symbols.ditTime()
+            let dah = 3 * dit
             let lspace = dit
             let wspace = dah
             
@@ -113,30 +132,70 @@ class Tone {
 
         }
         
-        public func sound(morse: String) {
+        private func sequencedTones(for input: [Tone]) -> [SequencedTone] {
+            var sequence = [SequencedTone]()
+            
+            let enums = input.enumerated()
+            
+            for (index, tone) in enums {
+                if index == 0 {
+                    sequence.append(SequencedTone(id:index,
+                                                  tone: tone,
+                                                  previous: nil,
+                                                  next: input[index + 1]))
+                    
+                }else if index < input.count - 1 {
+                    
+                    sequence.append(SequencedTone(id:index,
+                                                  tone: tone,
+                                                  previous: input[index - 1],
+                                                  next: input[index + 1]))
+                    
+                }else if index == input.count - 1 {
+                    sequence.append(SequencedTone(id:index,
+                                                  tone: tone,
+                                                  previous: input[index - 1],
+                                                  next: nil))
+                }
+                
+            }
+            return sequence
+        }
+        
+        public func sound(morse: String) async  {
            
                 let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
-                let tones = self.assembledTones(for: input)
+                let tones = self.sequencedTones(for: self.assembledTones(for: input))
                 print("playing \(tones)")
+                print("should take \(calculatedDuration(for: tones.map(\.tone))) seconds")
+            
+                let start = Date()
                 try? self.engine.start()
-                tones.enumerated().forEach { t in
-                    self.play(tone: t.element)
+            
+                tones.forEach { tone in
+                    if self.play(tone: tone.tone ) {
+                        self.playedTones.append(tone.tone)
+                    }else {
+                        print("still playing tone \(tone)")
+                    }
                 }
                 self.engine.stop()
+                let end = Date()
+                print("\(end.timeIntervalSince(start)) seconds elapsed.")
                 print("done playing \(input)")
             }
                       
     }
     
-    let frequency:Float = 440
+    var frequency:Float = 440
     var amplitude:Float = 1.0
-    var duration:Float = 0.1
+    var duration:Double = 0.1
     
     var description: String {
         "\(duration) \(frequency) \(amplitude)"
     }
         
-    init(duration: Float, amp: Float = 1.0) {
+    init(duration: Double, amp: Float = 1.0) {
         self.duration = duration
         self.amplitude = amp
     }
