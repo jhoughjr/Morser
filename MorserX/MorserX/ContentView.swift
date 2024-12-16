@@ -11,7 +11,8 @@ import Morse
 class MorseController: ObservableObject {
     @Published var morseText: String = ""
     @Published var morseCode: String = ""
-    var player =  Tone.Player()
+    
+    @Published var conductor = Conductor()
     
     public func convertToMorse() {
         morseCode = Morse.morse(from: self.morseText)
@@ -20,6 +21,7 @@ class MorseController: ObservableObject {
     public func convertToText() {
         morseText = Morse.latin(from: self.morseCode)
     }
+    
 }
 
 struct ContentView: View {
@@ -53,10 +55,9 @@ struct ContentView: View {
             HStack {
                 Button {
                     Task {
-                        await morseController.player.sound(morse: morseController.morseCode)
+                        await morseController.conductor.sound(morse: morseController.morseCode)
                     }
 
-                    
                 } label: {
                     Text("Play Test")
                 }
