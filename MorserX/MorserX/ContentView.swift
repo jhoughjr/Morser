@@ -63,6 +63,10 @@ struct ContentView: View {
                 }
                 .disabled(conductor.isPlaying)
             }
+            
+            if conductor.playedTones.isNotEmpty {
+                Text("Played \(conductor.playedTones.count) of \(conductor.tones.count)")
+            }
 
         }
         .padding()

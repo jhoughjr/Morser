@@ -14,6 +14,9 @@ actor Conductor: ObservableObject {
     
     @MainActor @Published var isPlaying:Bool = false
     @MainActor @Published var playedTones:[SequencedTone] = []
+    @MainActor @Published var unPlayedTones:[SequencedTone] = []
+    @MainActor @Published var tones:[SequencedTone] = []
+    @MainActor @Published var totalDuration:TimeInterval = 0.0
     
     public struct SequencedTone {
         let id:Int
@@ -96,9 +99,16 @@ actor Conductor: ObservableObject {
     
     public func sound(morse: String)   {
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tones = sequencedTones(for: assembledTones(for: input))
-        print("playing \(tones.count) tones.")
-        print("should take \(calculatedDuration(for: tones.map(\.tone))) seconds.")
+        let tones = self.sequencedTones(for: assembledTones(for: input))
+        
+        Task { @MainActor in
+            self.tones = await self.sequencedTones(for: assembledTones(for: input))
+            self.totalDuration = await self.calculatedDuration(for: self.tones.map(\.tone))
+            print("playing \(self.tones.count) tones.")
+            print("should take \(await self.calculatedDuration(for: self.tones.map(\.tone))) seconds.")
+        }
+        
+       
         let start = Date()
         
         Task {
@@ -114,10 +124,17 @@ actor Conductor: ObservableObject {
             print("Playing tones...")
             Task { @MainActor in
                 self.isPlaying = true
+                self.playedTones.removeAll()
+                self.unPlayedTones.removeAll()
+                self.unPlayedTones.append(contentsOf: tones)
             }
             
             for seq in tones {
                 await self.player.play(tone: seq.tone )
+                Task { @MainActor in
+                    self.playedTones.append(seq)
+                    self.unPlayedTones.removeAll(where: { $0.id == seq.id })
+                }
             }
             
             self.player.engine.stop()
