@@ -8,10 +8,12 @@
 
 import Morse
 import AudioKit
-
 import AVFoundation
 
 actor Conductor: ObservableObject {
+    
+    @MainActor @Published var isPlaying:Bool = false
+    @MainActor @Published var playedTones:[SequencedTone] = []
     
     public struct SequencedTone {
         let id:Int
@@ -22,7 +24,7 @@ actor Conductor: ObservableObject {
     
     nonisolated let player:Player = Player()
     
-    public func calculatedDuration(for tones:[Tone]) -> TimeInterval {
+    private func calculatedDuration(for tones:[Tone]) -> TimeInterval {
         let duration = tones.reduce(0) { $0 + $1.duration }
         return duration
     }
@@ -110,13 +112,19 @@ actor Conductor: ObservableObject {
                 print("error \(error)")
             }
             print("Playing tones...")
+            Task { @MainActor in
+                self.isPlaying = true
+            }
+            
             for seq in tones {
                 await self.player.play(tone: seq.tone )
             }
             
             self.player.engine.stop()
             print("Engine stopped.")
-            
+            Task { @MainActor in
+                self.isPlaying = false
+            }
             DispatchQueue.main.async {
                 let end = Date()
                 print("\(end.timeIntervalSince(start)) seconds elapsed.")
@@ -127,44 +135,7 @@ actor Conductor: ObservableObject {
     
 }
 
-public class Player: Observable {
-    
-    struct Signals {
-        
-        static let twoPi = 2 * Float.pi
-        
-        static let sine = { (phase: Float) -> Float in
-            return sin(phase)
-        }
-        
-        static let whiteNoise = { (phase: Float) -> Float in
-            return ((Float(arc4random_uniform(UINT32_MAX)) / Float(UINT32_MAX)) * 2 - 1)
-        }
-        
-        static let sawtoothUp = { (phase: Float) -> Float in
-            return 1.0 - 2.0 * (phase * (1.0 / twoPi))
-        }
-        
-        static let sawtoothDown = { (phase: Float) -> Float in
-            return (2.0 * (phase * (1.0 / twoPi))) - 1.0
-        }
-        
-        static let square = { (phase: Float) -> Float in
-            if phase <= Float.pi {
-                return 1.0
-            } else {
-                return -1.0
-            }
-        }
-        
-        static let triangle = { (phase: Float) -> Float in
-            var value = (2.0 * (phase * (1.0 / twoPi))) - 1.0
-            if value < 0.0 {
-                value = -value
-            }
-            return 2.0 * (value - 0.5)
-        }
-    }
+public class Player {
     
     nonisolated let engine = AudioEngine()
     nonisolated let osc = PlaygroundOscillator()
