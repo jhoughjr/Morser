@@ -18,7 +18,8 @@ actor Conductor: ObservableObject {
     @MainActor @Published var tones:[SequencedTone] = []
     @MainActor @Published var totalDuration:TimeInterval = 0.0
     @MainActor @Published var playedDuration:TimeInterval = 0.0
-
+    @MainActor @Published var currentTone:SequencedTone? = nil
+    
     public struct SequencedTone {
         let id:Int
         let tone:Tone
@@ -33,33 +34,26 @@ actor Conductor: ObservableObject {
         return duration
     }
     
-    private func assembledTones(for input: String,
-                                using ditTime: Double = 0.2) -> [Tone] {
-        print("assembling with ditTime \(ditTime)")
+    private func assembledTones(for input: String) -> [Tone] {
+        print("input = \(input)")
         var tones = [Tone]()
         let enumerated = input.enumerated()
-        
-        let dit = ditTime
-        let dah = 3 * dit
-        let lspace = dit
-        let wspace = dah
-        
+               
         enumerated.forEach({ (index, char) in
             switch char {
             case ".":
                 print("dit")
-                tones.append(.init(duration: dit, amp: 1))
-                //                    print("lspace")
-                tones.append(.init(duration: lspace, amp: 0.0))
+                tones.append( .init(.dit))
+                tones.append(.init(.infraSpace))
             case "-":
                 print("dah")
-                tones.append(.init(duration: dah, amp: 1.0))
+                tones.append(.init(.dah))
                 //                    print("lspace")
-                tones.append(.init(duration: lspace, amp: 0.0))
+                tones.append(.init(.infraSpace))
                 //
             case " ":
                 print("wspace")
-                tones.append(.init(duration: wspace, amp: 0.0))
+                tones.append(.init(.letterSpace))
                 
             default:
                 print("\(char) unhandled.")
@@ -103,10 +97,10 @@ actor Conductor: ObservableObject {
     public func sound(morse: String, with ditTime: Double = 0.2)   {
         print("sound with \(ditTime) dit time.")
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tones = self.sequencedTones(for: assembledTones(for: input, using: ditTime))
+        let tones = self.sequencedTones(for: assembledTones(for: input))
         
         Task { @MainActor in
-            self.tones = await self.sequencedTones(for: assembledTones(for: input, using: ditTime))
+            self.tones = await self.sequencedTones(for: assembledTones(for: input))
             self.playedDuration = 0
             self.totalDuration = await self.calculatedDuration(for: self.tones.map(\.tone))
             print("playing \(self.tones.count) tones.")
@@ -135,6 +129,11 @@ actor Conductor: ObservableObject {
             }
             
             for seq in tones {
+                
+                Task { @MainActor in
+                    self.currentTone = seq
+                }
+                
                 await self.player.play(tone: seq.tone )
                 Task { @MainActor in
                     self.playedTones.append(seq)
@@ -143,7 +142,7 @@ actor Conductor: ObservableObject {
             }
             
             self.player.engine.stop()
-            print("Engine stopped.")
+            print("Audio Engine stopped.")
             Task { @MainActor in
                 self.isPlaying = false
             }
@@ -171,11 +170,19 @@ public class Player {
     }
     
     public func play(tone: Tone) async {
-        
-        self.osc.amplitude = tone.amplitude
+//        if tone.amplitude == 0 {
+//            osc.frequency = 220
+//            osc.amplitude = 1
+//        }else {
+            self.osc.amplitude = tone.amplitude
+//        }
         self.osc.start()
-        print("       playing for \(tone.duration)")
-        await Task.sleep(seconds: tone.duration)
+        do {
+            try await Task.sleep(for: .milliseconds( tone.duration * 1000 ))
+        }
+        catch {
+            print("\(error)")
+        }
         self.osc.stop()
 
     }

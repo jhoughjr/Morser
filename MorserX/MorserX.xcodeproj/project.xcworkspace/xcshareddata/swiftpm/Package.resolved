@@ -11,30 +11,12 @@
       }
     },
     {
-      "identity" : "lullaby",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/jtodaone/Lullaby.git",
-      "state" : {
-        "revision" : "f1f42ec442d7711ecbe457f17dc159962d65731c",
-        "version" : "0.2.3"
-      }
-    },
-    {
       "identity" : "morse.swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/jhoughjr/Morse.swift.git",
       "state" : {
         "branch" : "main",
-        "revision" : "ad64560faccab6583783a4b3122056618ace9dca"
-      }
-    },
-    {
-      "identity" : "swift-collections",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-collections.git",
-      "state" : {
-        "revision" : "9d8719c8bebdc79740b6969c912ac706eb721d7a",
-        "version" : "0.0.7"
+        "revision" : "85f4282c75539737e26c8a74cf7c90f1a2d0a48d"
       }
     }
   ],
