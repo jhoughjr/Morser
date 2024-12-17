@@ -17,7 +17,8 @@ actor Conductor: ObservableObject {
     @MainActor @Published var unPlayedTones:[SequencedTone] = []
     @MainActor @Published var tones:[SequencedTone] = []
     @MainActor @Published var totalDuration:TimeInterval = 0.0
-    
+    @MainActor @Published var playedDuration:TimeInterval = 0.0
+
     public struct SequencedTone {
         let id:Int
         let tone:Tone
@@ -32,11 +33,13 @@ actor Conductor: ObservableObject {
         return duration
     }
     
-    private func assembledTones(for input: String, using timing: [String:Double] = Morse.Symbols.Timings()) -> [Tone] {
+    private func assembledTones(for input: String,
+                                using ditTime: Double = 0.2) -> [Tone] {
+        print("assembling with ditTime \(ditTime)")
         var tones = [Tone]()
         let enumerated = input.enumerated()
         
-        let dit = Morse.Symbols.ditTime()
+        let dit = ditTime
         let dah = 3 * dit
         let lspace = dit
         let wspace = dah
@@ -97,12 +100,14 @@ actor Conductor: ObservableObject {
         return sequence
     }
     
-    public func sound(morse: String)   {
+    public func sound(morse: String, with ditTime: Double = 0.2)   {
+        print("sound with \(ditTime) dit time.")
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tones = self.sequencedTones(for: assembledTones(for: input))
+        let tones = self.sequencedTones(for: assembledTones(for: input, using: ditTime))
         
         Task { @MainActor in
-            self.tones = await self.sequencedTones(for: assembledTones(for: input))
+            self.tones = await self.sequencedTones(for: assembledTones(for: input, using: ditTime))
+            self.playedDuration = 0
             self.totalDuration = await self.calculatedDuration(for: self.tones.map(\.tone))
             print("playing \(self.tones.count) tones.")
             print("should take \(await self.calculatedDuration(for: self.tones.map(\.tone))) seconds.")
@@ -142,14 +147,16 @@ actor Conductor: ObservableObject {
             Task { @MainActor in
                 self.isPlaying = false
             }
+            
             DispatchQueue.main.async {
                 let end = Date()
+                self.playedDuration = end.timeIntervalSince(start)
+                
                 print("\(end.timeIntervalSince(start)) seconds elapsed.")
                 print("done playing \(input)")
             }
         }
     }
-    
 }
 
 public class Player {
@@ -167,6 +174,7 @@ public class Player {
         
         self.osc.amplitude = tone.amplitude
         self.osc.start()
+        print("       playing for \(tone.duration)")
         await Task.sleep(seconds: tone.duration)
         self.osc.stop()
 
