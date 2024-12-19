@@ -72,6 +72,7 @@ struct ContentView: View {
             }
         }
     }
+    
     var playingInfo: some View {
         VStack {
             if conductor.playedTones.isNotEmpty {
@@ -83,8 +84,10 @@ struct ContentView: View {
     }
     
     var scrollingMorseView: some View {
-        ScrollView {
+        ScrollView(.horizontal) {
+            
             HStack {
+                Spacer()
                 ForEach(conductor.tones,
                         id: \.id) { t in
                     
@@ -111,9 +114,9 @@ struct ContentView: View {
                             t.tone.morse == Morse.Symbols.infraSpace.rawValue {
                             Text("_")
                                 .font(.title)
-                                .foregroundStyle(Color.red)
+                                .foregroundStyle(t.id == conductor.currentTone?.id ? Color.green : Color.red)
                         }
-            
+                        Spacer()
                     }
                     .onContinuousHover(perform: { phase in
                         switch phase {
@@ -125,8 +128,8 @@ struct ContentView: View {
                         }
                     })
                 }
-                Spacer()
             }
+            
         }
     }
     
@@ -143,7 +146,6 @@ struct ContentView: View {
             .disabled(conductor.isPlaying)
             
             playingInfo
-            
             scrollingMorseView
         }
     }

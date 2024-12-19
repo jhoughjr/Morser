@@ -170,12 +170,9 @@ public class Player {
     }
     
     public func play(tone: Tone) async {
-//        if tone.amplitude == 0 {
-//            osc.frequency = 220
-//            osc.amplitude = 1
-//        }else {
-            self.osc.amplitude = tone.amplitude
-//        }
+
+        self.osc.amplitude = tone.amplitude
+
         self.osc.start()
         do {
             try await Task.sleep(for: .milliseconds( tone.duration * 1000 ))
