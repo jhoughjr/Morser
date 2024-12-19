@@ -17,9 +17,11 @@ class TimingController:ObservableObject {
 class MorseController: ObservableObject {
     @Published var morseText: String = "hello world"
     @Published var morseCode: String = ""
-
+    @Published var structuredPhrase:Morse.StructuredMorsePhrase? = nil
+    
     public func convertToMorse() {
         morseCode = Morse.morse(from: self.morseText)
+        structuredPhrase = Morse.structuredMorse(from: self.morseText)
     }
     
     public func convertToText() {
@@ -41,6 +43,7 @@ struct ContentView: View {
     @ObservedObject var conductor = Conductor()
     @ObservedObject var timingController = TimingController()
     @ObservedObject var hoverWatcher: HoverWatcher = HoverWatcher()
+    @State var test: String = ""
     
     var inputView: some View {
         VStack {
@@ -72,6 +75,7 @@ struct ContentView: View {
             }
         }
     }
+    
     var playingInfo: some View {
         VStack {
             if conductor.playedTones.isNotEmpty {
@@ -89,6 +93,10 @@ struct ContentView: View {
                         id: \.id) { t in
                     
                     VStack {
+                        Text("\(t.id)")
+                            .font(.footnote)
+                            .fontWeight(.light)
+                        
                         if hoverWatcher.hoveredTone?.id == t.id {
                             Text(t.tone.duration, format: .number)
                                 .font(.caption)
@@ -109,11 +117,11 @@ struct ContentView: View {
                         if t.tone.morse == Morse.Symbols.wordSpace.rawValue ||
                             t.tone.morse == Morse.Symbols.letterSpace.rawValue ||
                             t.tone.morse == Morse.Symbols.infraSpace.rawValue {
-                            Text("_")
+                            
+                            Text("\(t.tone.morse)")
                                 .font(.title)
                                 .foregroundStyle(Color.red)
                         }
-            
                     }
                     .onContinuousHover(perform: { phase in
                         switch phase {
@@ -136,15 +144,27 @@ struct ContentView: View {
                 Task {
                     await conductor.sound(morse: morseController.morseCode)
                 }
-                
             } label: {
                 Text("Play")
             }
             .disabled(conductor.isPlaying)
             
             playingInfo
-            
             scrollingMorseView
+//            Button(action: {
+//                test = Morse.latin(from: morseController.morseCode, verbose: true)
+//            }, label: {
+//                Text("check")
+//            })
+//            Text("\(test)")
+            
+            Button {
+                morseController.convertToMorse()
+                print("\(morseController.structuredPhrase)")
+            } label: {
+                Text("fuckl")
+            }
+
         }
     }
     

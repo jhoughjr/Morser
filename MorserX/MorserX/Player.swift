@@ -34,6 +34,36 @@ actor Conductor: ObservableObject {
         return duration
     }
     
+    private func assembledTones(for input: Morse.StructuredMorsePhrase) -> [Tone] {
+        print("input = \(input)")
+        var tones = [Tone]()
+        let enumerated = input.input.enumerated()
+        
+        enumerated.forEach({ (index, char) in
+            switch char {
+            case ".":
+                print("dit")
+                tones.append( .init(.dit))
+                tones.append(.init(.infraSpace))
+            case "-":
+                print("dah")
+                tones.append(.init(.dah))
+                //                    print("lspace")
+                tones.append(.init(.infraSpace))
+                //
+            case " ":
+                print("wspace")
+                tones.append(.init(.letterSpace))
+                
+            default:
+                print("\(char) unhandled.")
+                break
+            }
+        })
+        return tones
+        
+    }
+    
     private func assembledTones(for input: String) -> [Tone] {
         print("input = \(input)")
         var tones = [Tone]()
@@ -63,6 +93,7 @@ actor Conductor: ObservableObject {
         return tones
         
     }
+    
     
     public func sequencedTones(for input: [Tone]) -> [Conductor.SequencedTone] {
         var sequence = [Conductor.SequencedTone]()
@@ -94,10 +125,76 @@ actor Conductor: ObservableObject {
         return sequence
     }
     
+    // did this work?
+    public func sound(structuredMorse: String, with ditTime: Double = 0.2)   {
+        print("sound with \(ditTime) dit time.")
+        let input = structuredMorse.trimmingCharacters(in: .whitespacesAndNewlines)
+        let structuredInput = Morse.structuredMorse(from: input)
+        let tones = self.sequencedTones(for: assembledTones(for: structuredInput))
+        
+        Task { @MainActor in
+            self.tones = await self.sequencedTones(for: assembledTones(for: input))
+            self.playedDuration = 0
+            self.totalDuration = await self.calculatedDuration(for: self.tones.map(\.tone))
+            print("playing \(self.tones.count) tones.")
+            print("should take \(await self.calculatedDuration(for: self.tones.map(\.tone))) seconds.")
+        }
+        
+        
+        let start = Date()
+        
+        Task {
+            do {
+                print("Starting AudioEngine...")
+                try  self.player.engine.start()
+                print("    Started AudioEngine.")
+                
+            }
+            catch {
+                print("error \(error)")
+            }
+            print("Playing tones...")
+            Task { @MainActor in
+                self.isPlaying = true
+                self.playedTones.removeAll()
+                self.unPlayedTones.removeAll()
+                self.unPlayedTones.append(contentsOf: tones)
+            }
+            
+            for seq in tones {
+                
+                Task { @MainActor in
+                    self.currentTone = seq
+                }
+                
+                await self.player.play(tone: seq.tone )
+                Task { @MainActor in
+                    self.playedTones.append(seq)
+                    self.unPlayedTones.removeAll(where: { $0.id == seq.id })
+                }
+            }
+            
+            self.player.engine.stop()
+            print("Audio Engine stopped.")
+            Task { @MainActor in
+                self.isPlaying = false
+            }
+            
+            DispatchQueue.main.async {
+                let end = Date()
+                self.playedDuration = end.timeIntervalSince(start)
+                
+                print("\(end.timeIntervalSince(start)) seconds elapsed.")
+                print("done playing \(input)")
+            }
+        }
+    }
+
     public func sound(morse: String, with ditTime: Double = 0.2)   {
         print("sound with \(ditTime) dit time.")
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tones = self.sequencedTones(for: assembledTones(for: input))
+        let morseInput = Morse.morse(from: input)
+        let tones = self.sequencedTones(for: assembledTones(for: morseInput))
         
         Task { @MainActor in
             self.tones = await self.sequencedTones(for: assembledTones(for: input))
@@ -142,6 +239,7 @@ actor Conductor: ObservableObject {
             }
             
             self.player.engine.stop()
+            
             print("Audio Engine stopped.")
             Task { @MainActor in
                 self.isPlaying = false
@@ -170,12 +268,9 @@ public class Player {
     }
     
     public func play(tone: Tone) async {
-//        if tone.amplitude == 0 {
-//            osc.frequency = 220
-//            osc.amplitude = 1
-//        }else {
-            self.osc.amplitude = tone.amplitude
-//        }
+
+        self.osc.amplitude = tone.amplitude
+
         self.osc.start()
         do {
             try await Task.sleep(for: .milliseconds( tone.duration * 1000 ))

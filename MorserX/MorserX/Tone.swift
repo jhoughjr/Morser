@@ -16,7 +16,7 @@ import Foundation
 import Morse
 
 public struct Tone {
-    
+  
     var frequency:Float = 440
     var amplitude:Float = 1.0
     var duration:Double = 100
