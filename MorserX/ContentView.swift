@@ -62,6 +62,7 @@ struct ContentView: View {
             
         }
     }
+    
     var morseInView: some View {
         HStack {
             TextField("morseCode", text: $morseController.morseCode)
@@ -83,7 +84,30 @@ struct ContentView: View {
         }
     }
     
+    var legendView: some View {
+        VStack {
+            HStack {
+                Text("Symbol Infraspace")
+                   
+                Text(".")
+                    .foregroundStyle(.gray)
+            }
+            HStack {
+                Text("Letter Interspace")
+                Text("...")
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Text("Word Interspace")
+                Text("...")
+                    .foregroundStyle(.blue)
+                
+            }
+        }
+    }
+    
     var scrollingMorseView: some View {
+        
         ScrollView(.horizontal) {
             
             HStack {
@@ -100,8 +124,8 @@ struct ContentView: View {
                         
                         if conductor.currentTone?.id == t.id {
                             Text("\(t.tone.morse)")
-                            .font(.title)
-                            .foregroundStyle(Color.green)
+                                .font(.title)
+                                .foregroundStyle(Color.green)
                         }else
                         {
                             Text("\(t.tone.morse)")
@@ -109,12 +133,20 @@ struct ContentView: View {
                                 .foregroundStyle(Color.white)
                         }
                         
-                        if t.tone.morse == Morse.Symbols.wordSpace.rawValue ||
-                            t.tone.morse == Morse.Symbols.letterSpace.rawValue ||
-                            t.tone.morse == Morse.Symbols.infraSpace.rawValue {
-                            Text("_")
+                        if t.tone.morse == Morse.Symbols.wordSpace.rawValue {
+                            Text(".......")
+                                .font(.title)
+                                .foregroundStyle(t.id == conductor.currentTone?.id ? Color.green : Color.blue)
+                        }
+                        if t.tone.morse == Morse.Symbols.letterSpace.rawValue {
+                            Text("...")
                                 .font(.title)
                                 .foregroundStyle(t.id == conductor.currentTone?.id ? Color.green : Color.red)
+                        }
+                        if t.tone.morse == Morse.Symbols.infraSpace.rawValue {
+                            Text(".")
+                                .font(.title)
+                                .foregroundStyle(t.id == conductor.currentTone?.id ? Color.green : Color.gray)
                         }
                         Spacer()
                     }
@@ -147,6 +179,8 @@ struct ContentView: View {
             
             playingInfo
             scrollingMorseView
+            legendView
+            Spacer()
         }
     }
     

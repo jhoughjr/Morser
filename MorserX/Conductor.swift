@@ -1,8 +1,8 @@
 //
-//  Player.swift
+//  Conductor.swift
 //  MorserX
 //
-//  Created by Jimmy Hough Jr on 12/16/24.
+//  Created by Jimmy Hough Jr on 12/19/24.
 //
 
 
@@ -35,39 +35,103 @@ actor Conductor: ObservableObject {
     }
     
     private func assembledTones(for input: String) -> [Tone] {
+        print("assembling tones,...")
         print("input = \(input)")
         var tones = [Tone]()
-        let enumerated = input.enumerated()
-               
-        enumerated.forEach({ (index, char) in
-            switch char {
-            case ".":
-                print("dit")
-                tones.append( .init(.dit))
-                tones.append(.init(.infraSpace))
-            case "-":
-                print("dah")
-                tones.append(.init(.dah))
-                //                    print("lspace")
-                tones.append(.init(.infraSpace))
-                //
-            case " ":
-                print("wspace")
-                tones.append(.init(.letterSpace))
-                
-            default:
-                print("\(char) unhandled.")
-                break
+        
+        let words = Morse.morseWords(from: input)
+        let lastWordIndex = words.count - 1
+        var unhandledCount = 0
+        
+        for (i,word) in words.enumerated() {
+            print("word \(i) = \(word)")
+            let lastCharIndex = word.count - 1
+            
+	            for (j,char) in word.enumerated() {
+                print("char \(j) \(char)")
+                switch char {
+                case ".":
+                    print("dit")
+                    tones.append( .init(.dit))
+                    
+                    if j != lastCharIndex {
+                        print("adding infraspace")
+                        tones.append(.init(.infraSpace))
+                    }
+                case "-":
+                    print("dah")
+                    tones.append(.init(.dah))
+                    if j != lastCharIndex {
+                        print("adding infraspace")
+                        tones.append(.init(.infraSpace))
+                    }
+                default:
+                    print("\(char) unhandled.")
+                   
+                    if unhandledCount % 3 == 0 {
+                        print("found letterspaceß")
+                        tones.append(.init(.letterSpace))
+                    }else if unhandledCount % 7 == 0 {
+                       print("found wordspace")
+                    }
+                    unhandledCount += 1
+                    
+                }
+              
             }
-        })
+            unhandledCount = 0
+            print("wordspace")
+            if i != lastWordIndex {
+                print("addingWOrdspace")
+                tones.append(.init(.wordSpace))
+            }
+        }
         return tones
         
     }
     
+    public func cleanedTones(for input: [Tone]) -> [Tone] {
+
+        var previous: Tone? = nil
+        var filteredInput: [Tone] = []
+        
+        input.forEach { i in
+            if let p = previous {
+                
+                if p.morse == Morse.Symbols.infraSpace.rawValue {
+                    
+                    if i.morse == Morse.Symbols.wordSpace.rawValue || i.morse == Morse.Symbols.letterSpace.rawValue {
+
+                    }else {
+                        filteredInput.append(p)
+
+                    }
+                }
+               
+                else {
+                    filteredInput.append(p)
+
+                }
+            }
+            
+            //current is next previous
+            previous = i
+        }
+        // adds the left previous tone
+        if let p = previous {
+            filteredInput.append(p)
+        }
+        
+        print("reurning \(filteredInput.count) tones")
+        return filteredInput
+    }
+    
     public func sequencedTones(for input: [Tone]) -> [Conductor.SequencedTone] {
+        print("sequencing tones...")
         var sequence = [Conductor.SequencedTone]()
         
         let enums = input.enumerated()
+        
         
         for (index, tone) in enums {
             if index == 0 {
@@ -97,17 +161,17 @@ actor Conductor: ObservableObject {
     public func sound(morse: String, with ditTime: Double = 0.2)   {
         print("sound with \(ditTime) dit time.")
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tones = self.sequencedTones(for: assembledTones(for: input))
+        let tones = self.sequencedTones(for: self.cleanedTones(for: assembledTones(for: input)))
         
         Task { @MainActor in
-            self.tones = await self.sequencedTones(for: assembledTones(for: input))
+            self.tones = tones
             self.playedDuration = 0
             self.totalDuration = await self.calculatedDuration(for: self.tones.map(\.tone))
             print("playing \(self.tones.count) tones.")
             print("should take \(await self.calculatedDuration(for: self.tones.map(\.tone))) seconds.")
         }
         
-       
+        
         let start = Date()
         
         Task {
@@ -115,7 +179,7 @@ actor Conductor: ObservableObject {
                 print("Starting AudioEngine...")
                 try  self.player.engine.start()
                 print("    Started AudioEngine.")
-
+                
             }
             catch {
                 print("error \(error)")
@@ -157,31 +221,3 @@ actor Conductor: ObservableObject {
         }
     }
 }
-
-public class Player {
-    
-    nonisolated let engine = AudioEngine()
-    nonisolated let osc = PlaygroundOscillator()
-    
-    init() {
-        
-        engine.output = osc
-        print("Engine:\(engine.connectionTreeDescription)")
-    }
-    
-    public func play(tone: Tone) async {
-
-        self.osc.amplitude = tone.amplitude
-
-        self.osc.start()
-        do {
-            try await Task.sleep(for: .milliseconds( tone.duration * 1000 ))
-        }
-        catch {
-            print("\(error)")
-        }
-        self.osc.stop()
-
-    }
-}
-
