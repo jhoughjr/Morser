@@ -106,6 +106,8 @@ struct ContentView: View {
         }
     }
     
+    @State private var scrollPosition: Int? = 0
+
     var scrollingMorseView: some View {
         
         ScrollView(.horizontal) {
@@ -126,6 +128,7 @@ struct ContentView: View {
                             Text("\(t.tone.morse)")
                                 .font(.title)
                                 .foregroundStyle(Color.green)
+
                         }else
                         {
                             Text("\(t.tone.morse)")
@@ -159,15 +162,19 @@ struct ContentView: View {
                             hoverWatcher.hoveredTone = nil
                         }
                     })
+                    
                 }
             }
             
         }
+        .scrollPosition(id: $scrollPosition)
+
     }
     
     var playerView: some View {
         VStack {
             Button {
+                self.scrollPosition = 0
                 Task {
                     await conductor.sound(morse: morseController.morseCode)
                 }
@@ -193,9 +200,112 @@ struct ContentView: View {
          
             inputView
             playerView
+            MorseFlasherView(conductor: conductor)
+                .onChange(of: conductor.currentTone) { oldValue, newValue in
+                    scrollPosition = scrollPosition == nil ? 0 : (scrollPosition! + 1)
+                }
          
         }
         .padding()
     }
 }
 
+struct MorseSymbolView: View {
+    var symbol: Morse.Symbols
+    
+    var body: some View {
+        switch symbol {
+        case .dit:
+             Text("dit")
+        case .dah:
+            Text("dah")
+        case .infraSpace:
+             Text("_")
+        case .letterSpace:
+            Text("___")
+        case .wordSpace:
+            Text("_______")
+        }
+    }
+}
+
+struct MorseFlasherView: View {
+    enum FlashType {
+        case foregrounfSymbol
+        case background
+    }
+    
+    @ObservedObject var conductor:Conductor
+    @State var flashType:FlashType = .background
+    
+    var bgFlashView: some View {
+        ZStack {
+            if conductor.isSounding {
+                Color.red
+            }else {
+                Color.gray
+            }
+            if let tone = conductor.currentTone?.tone {
+                
+                if let s = Morse.Symbols(rawValue: tone.morse) {
+                    MorseSymbolView(symbol: s)
+                        .font(.largeTitle)
+                }
+                
+            }
+        }
+    }
+    
+    var symbolFlashView: some View {
+        ZStack {
+            Color.gray
+            if conductor.isSounding {
+                if let tone = conductor.currentTone?.tone {
+                    
+                    if let s = Morse.Symbols(rawValue: tone.morse) {
+                        MorseSymbolView(symbol: s)
+                            .font(.largeTitle)
+                            .foregroundStyle(Color.white)
+                    }
+                    
+                }
+            }else {
+                if let tone = conductor.currentTone?.tone {
+                    
+                    if let s = Morse.Symbols(rawValue: tone.morse) {
+                        MorseSymbolView(symbol: s)
+                            .font(.largeTitle)
+                            .foregroundStyle(Color.white)
+                    }
+                    
+                }
+            }
+          
+        }
+    }
+    
+    var body: some View {
+        VStack {
+            HStack {
+                Button {
+                    self.flashType = .background
+                } label: {
+                    Text("Flash Background")
+                }
+                Button {
+                    self.flashType = .foregrounfSymbol
+                } label: {
+                    Text("Flash Symbol")
+                }
+            }
+
+            switch flashType {
+            case .foregrounfSymbol:
+                symbolFlashView
+            case .background:
+                bgFlashView
+            }
+            
+        }
+    }
+}

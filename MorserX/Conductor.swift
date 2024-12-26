@@ -19,12 +19,17 @@ actor Conductor: ObservableObject {
     @MainActor @Published var totalDuration:TimeInterval = 0.0
     @MainActor @Published var playedDuration:TimeInterval = 0.0
     @MainActor @Published var currentTone:SequencedTone? = nil
-    
-    public struct SequencedTone {
+    @MainActor @Published var isSounding = false
+
+    public struct SequencedTone: Equatable {
         let id:Int
         let tone:Tone
         let previous:Tone?
         let next:Tone?
+        
+        static func == (lhs: SequencedTone, rhs: SequencedTone) -> Bool {
+            lhs.id == rhs.id
+        }
     }
     
     nonisolated let player:Player = Player()
@@ -196,6 +201,11 @@ actor Conductor: ObservableObject {
                 
                 Task { @MainActor in
                     self.currentTone = seq
+                    if seq.tone.amplitude == 0 {
+                        isSounding = false
+                    }else {
+                        isSounding = true
+                    }
                 }
                 
                 await self.player.play(tone: seq.tone )
