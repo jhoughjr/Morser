@@ -8,24 +8,129 @@
 import SwiftUI
 import Morse
 
-class TimingController:ObservableObject {
-    @Published var ditTime:Double = 0.2
-    @Published var dahTime:Double = 3 * 0.2
-
+struct Controllers {
+    class TimingController: ObservableObject {
+        @Published var ditTime:Double = 0.2
+        @Published var dahTime:Double = 3 * 0.2
+        
+    }
+    
+    class MorseController: ObservableObject {
+        @Published var morseText: String = "hello world"
+        @Published var morseCode: String = ""
+        
+        public func convertToMorse() {
+            morseCode = Morse.morse(from: self.morseText)
+        }
+        
+        public func convertToText() {
+            morseText = Morse.latin(from: self.morseCode)
+        }
+        
+    }
 }
 
-class MorseController: ObservableObject {
-    @Published var morseText: String = "hello world"
-    @Published var morseCode: String = ""
-
-    public func convertToMorse() {
-        morseCode = Morse.morse(from: self.morseText)
+struct Views {
+    
+    struct MorseSymbolView: View {
+        var symbol: Morse.Symbols
+        
+        var body: some View {
+            switch symbol {
+            case .dit:
+                Text("dit")
+            case .dah:
+                Text("dah")
+            case .infraSpace:
+                Text("_")
+            case .letterSpace:
+                Text("___")
+            case .wordSpace:
+                Text("_______")
+            }
+        }
     }
     
-    public func convertToText() {
-        morseText = Morse.latin(from: self.morseCode)
+    struct MorseFlasherView: View {
+        enum FlashType {
+            case foregrounfSymbol
+            case background
+        }
+        
+        @ObservedObject var conductor:Conductor
+        @State var flashType:FlashType = .background
+        
+        var bgFlashView: some View {
+            ZStack {
+                if conductor.isSounding {
+                    Color.red
+                }else {
+                    Color.gray
+                }
+                if let tone = conductor.currentTone?.tone {
+                    
+                    if let s = Morse.Symbols(rawValue: tone.morse) {
+                        MorseSymbolView(symbol: s)
+                            .font(.largeTitle)
+                    }
+                    
+                }
+            }
+        }
+        
+        var symbolFlashView: some View {
+            ZStack {
+                Color.gray
+                if conductor.isSounding {
+                    if let tone = conductor.currentTone?.tone {
+                        
+                        if let s = Morse.Symbols(rawValue: tone.morse) {
+                            MorseSymbolView(symbol: s)
+                                .font(.largeTitle)
+                                .foregroundStyle(Color.white)
+                        }
+                        
+                    }
+                }else {
+                    if let tone = conductor.currentTone?.tone {
+                        
+                        if let s = Morse.Symbols(rawValue: tone.morse) {
+                            MorseSymbolView(symbol: s)
+                                .font(.largeTitle)
+                                .foregroundStyle(Color.white)
+                        }
+                        
+                    }
+                }
+                
+            }
+        }
+        
+        var body: some View {
+            VStack {
+                HStack {
+                    Button {
+                        self.flashType = .background
+                    } label: {
+                        Text("Flash Background")
+                    }
+                    Button {
+                        self.flashType = .foregrounfSymbol
+                    } label: {
+                        Text("Flash Symbol")
+                    }
+                }
+                
+                switch flashType {
+                case .foregrounfSymbol:
+                    symbolFlashView
+                case .background:
+                    bgFlashView
+                }
+                
+            }
+        }
     }
-    
 }
 
 class HoverWatcher: ObservableObject {
@@ -37,9 +142,11 @@ class HoverWatcher: ObservableObject {
 }
 
 struct ContentView: View {
-    @ObservedObject var morseController: MorseController = MorseController()
+    
+    @ObservedObject var morseController = Controllers.MorseController()
     @ObservedObject var conductor = Conductor()
-    @ObservedObject var timingController = TimingController()
+    @ObservedObject var timingController = Controllers.TimingController()
+    
     @ObservedObject var hoverWatcher: HoverWatcher = HoverWatcher()
     
     var inputView: some View {
@@ -200,112 +307,12 @@ struct ContentView: View {
          
             inputView
             playerView
-            MorseFlasherView(conductor: conductor)
+            Views.MorseFlasherView(conductor: conductor)
                 .onChange(of: conductor.currentTone) { oldValue, newValue in
                     scrollPosition = scrollPosition == nil ? 0 : (scrollPosition! + 1)
                 }
          
         }
         .padding()
-    }
-}
-
-struct MorseSymbolView: View {
-    var symbol: Morse.Symbols
-    
-    var body: some View {
-        switch symbol {
-        case .dit:
-             Text("dit")
-        case .dah:
-            Text("dah")
-        case .infraSpace:
-             Text("_")
-        case .letterSpace:
-            Text("___")
-        case .wordSpace:
-            Text("_______")
-        }
-    }
-}
-
-struct MorseFlasherView: View {
-    enum FlashType {
-        case foregrounfSymbol
-        case background
-    }
-    
-    @ObservedObject var conductor:Conductor
-    @State var flashType:FlashType = .background
-    
-    var bgFlashView: some View {
-        ZStack {
-            if conductor.isSounding {
-                Color.red
-            }else {
-                Color.gray
-            }
-            if let tone = conductor.currentTone?.tone {
-                
-                if let s = Morse.Symbols(rawValue: tone.morse) {
-                    MorseSymbolView(symbol: s)
-                        .font(.largeTitle)
-                }
-                
-            }
-        }
-    }
-    
-    var symbolFlashView: some View {
-        ZStack {
-            Color.gray
-            if conductor.isSounding {
-                if let tone = conductor.currentTone?.tone {
-                    
-                    if let s = Morse.Symbols(rawValue: tone.morse) {
-                        MorseSymbolView(symbol: s)
-                            .font(.largeTitle)
-                            .foregroundStyle(Color.white)
-                    }
-                    
-                }
-            }else {
-                if let tone = conductor.currentTone?.tone {
-                    
-                    if let s = Morse.Symbols(rawValue: tone.morse) {
-                        MorseSymbolView(symbol: s)
-                            .font(.largeTitle)
-                            .foregroundStyle(Color.white)
-                    }
-                    
-                }
-            }
-          
-        }
-    }
-    
-    var body: some View {
-        VStack {
-            HStack {
-                Button {
-                    self.flashType = .background
-                } label: {
-                    Text("Flash Background")
-                }
-                Button {
-                    self.flashType = .foregrounfSymbol
-                } label: {
-                    Text("Flash Symbol")
-                }
-            }
-
-            switch flashType {
-            case .foregrounfSymbol:
-                symbolFlashView
-            case .background:
-                bgFlashView
-            }
-            
-        }
     }
 }

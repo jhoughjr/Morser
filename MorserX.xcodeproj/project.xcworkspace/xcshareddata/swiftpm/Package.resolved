@@ -1,19 +1,19 @@
 {
-  "originHash" : "411ffa2d62aa198aae1bb2bde89b7106760fea87374d2ca0b6fdc5698d99a536",
+  "originHash" : "fa88913001739c0a4f5da694cc2d7d84f127efeb8b245fe3814c269ff7c3503b",
   "pins" : [
     {
       "identity" : "audiokit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/AudioKit/AudioKit.git",
+      "location" : "git@github.com:AudioKit/AudioKit.git",
       "state" : {
-        "revision" : "2ebd422855e4645d3169f83d1765d1c8196b4f46",
-        "version" : "5.6.4"
+        "revision" : "5b3fd238ef8ee95c9842ca4ea83ca58ee151e630",
+        "version" : "5.6.5"
       }
     },
     {
       "identity" : "morse.swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/jhoughjr/Morse.swift.git",
+      "location" : "git@github.com:jhoughjr/Morse.swift.git",
       "state" : {
         "branch" : "main",
         "revision" : "78ecfb2933487ea98616b3aaf3ac331b3eed3a87"

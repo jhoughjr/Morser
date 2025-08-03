@@ -26,7 +26,7 @@ public struct Tone {
         "\(duration) s \(frequency) Hz \(amplitude) Am"
     }
     
-    init(_ symbol:Morse.Symbols,
+    init(_ symbol: Morse.Symbols,
          frequency:Float = 440) {
         switch symbol {
             

@@ -21,6 +21,7 @@ actor Conductor: ObservableObject {
     @MainActor @Published var currentTone:SequencedTone? = nil
     @MainActor @Published var isSounding = false
 
+    /// A sequenced tone knows its place.
     public struct SequencedTone: Equatable {
         let id:Int
         let tone:Tone
@@ -34,11 +35,13 @@ actor Conductor: ObservableObject {
     
     nonisolated let player:Player = Player()
     
+    /// I should probably ensure i calulate from cleaned tones.
     private func calculatedDuration(for tones:[Tone]) -> TimeInterval {
         let duration = tones.reduce(0) { $0 + $1.duration }
         return duration
     }
     
+    /// Assembles tons from an input of Morse words.
     private func assembledTones(for input: String) -> [Tone] {
         print("assembling tones,...")
         print("input = \(input)")
@@ -95,6 +98,7 @@ actor Conductor: ObservableObject {
         
     }
     
+    /// Infra-spaces are not sounded to they need to be removed from the tone seuqence for proper timing.
     public func cleanedTones(for input: [Tone]) -> [Tone] {
 
         var previous: Tone? = nil
@@ -131,6 +135,7 @@ actor Conductor: ObservableObject {
         return filteredInput
     }
     
+    /// A sequnce is a linked list of Tones.
     public func sequencedTones(for input: [Tone]) -> [Conductor.SequencedTone] {
         print("sequencing tones...")
         var sequence = [Conductor.SequencedTone]()
@@ -163,6 +168,7 @@ actor Conductor: ObservableObject {
         return sequence
     }
     
+    /// Top level API to turn morse strings into played tones.
     public func sound(morse: String, with ditTime: Double = 0.2)   {
         print("sound with \(ditTime) dit time.")
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
