@@ -26,6 +26,35 @@ public struct Tone {
         "\(duration) s \(frequency) Hz \(amplitude) Am"
     }
     
+    /// Preferred initializer for playback: uses explicit ditTime duration for accurate timing
+    init(_ symbol: Morse.Symbols, ditTime: Double, frequency:Float = 440) {
+        switch symbol {
+            
+        case .dit:
+            morse = "."
+            self.duration = ditTime
+            self.amplitude = 1.0
+        case .dah:
+            morse = "-"
+            self.duration = ditTime * 3
+            self.amplitude = 1.0
+        case .infraSpace:
+            morse = Morse.Symbols.infraSpace.rawValue
+            self.duration = ditTime
+            self.amplitude = 0.0
+        case .letterSpace:
+            morse = Morse.Symbols.letterSpace.rawValue
+            self.duration = ditTime * 3
+            self.amplitude = 0.0
+        case .wordSpace:
+            morse = Morse.Symbols.wordSpace.rawValue
+            self.duration = ditTime * 7
+            self.amplitude = 0.0
+        }
+        self.frequency = frequency
+    }
+    
+    /// Deprecated initializer kept for compatibility. Use the timing-aware init for playback.
     init(_ symbol: Morse.Symbols,
          frequency:Float = 440) {
         switch symbol {
@@ -51,6 +80,7 @@ public struct Tone {
             self.duration = Morse.Symbols.ditTime() * 7
             self.amplitude = 0.0
         }
+        self.frequency = frequency
     }
     
     @available(*, deprecated,
@@ -60,3 +90,4 @@ public struct Tone {
         self.amplitude = amp
     }
 }
+

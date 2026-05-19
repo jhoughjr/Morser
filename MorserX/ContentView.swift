@@ -149,14 +149,26 @@ struct ContentView: View {
     
     @ObservedObject var hoverWatcher: HoverWatcher = HoverWatcher()
     
-    var inputView: some View {
+    // The inputView now includes a slider to adjust the minimum Morse time unit (dit time),
+    // which controls the timing for all Morse playback: dits, dahs, and all spaces.
+    private var inputView: some View {
         VStack {
             textInView
             morseInView.disabled(true)
+            VStack(alignment: .leading) {
+                Text("Dit Time: \(timingController.ditTime, specifier: "%.3f") s")
+                    .font(.caption)
+                Text("This sets the base unit (dit) for Morse timing—all symbol and space durations scale with this value.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Slider(value: $timingController.ditTime,
+                       in: 0.002...0.2, step: 0.001)
+                    .padding(.vertical, 4)
+            }
         }
     }
     
-    var textInView: some View {
+    private var textInView: some View {
         HStack {
             TextField("morseText", text: $morseController.morseText,
                       prompt: Text("Hello, world!"))
@@ -170,7 +182,7 @@ struct ContentView: View {
         }
     }
     
-    var morseInView: some View {
+    private var morseInView: some View {
         HStack {
             TextField("morseCode", text: $morseController.morseCode)
             Button {
@@ -181,7 +193,7 @@ struct ContentView: View {
         }
     }
     
-    var playingInfo: some View {
+    private var playingInfo: some View {
         VStack {
             if conductor.playedTones.isNotEmpty {
                 Text("Estimated Duration: \(conductor.totalDuration)")
@@ -191,7 +203,7 @@ struct ContentView: View {
         }
     }
     
-    var legendView: some View {
+    private var legendView: some View {
         VStack {
             HStack {
                 Text("Symbol Infraspace")
@@ -215,7 +227,7 @@ struct ContentView: View {
     
     @State private var scrollPosition: Int? = 0
 
-    var scrollingMorseView: some View {
+    private var scrollingMorseView: some View {
         
         ScrollView(.horizontal) {
             
@@ -278,12 +290,12 @@ struct ContentView: View {
 
     }
     
-    var playerView: some View {
+    private var playerView: some View {
         VStack {
             Button {
                 self.scrollPosition = 0
                 Task {
-                    await conductor.sound(morse: morseController.morseCode)
+                    await conductor.sound(morse: morseController.morseCode, with: timingController.ditTime)
                 }
                 
             } label: {
@@ -298,6 +310,8 @@ struct ContentView: View {
         }
     }
     
+    @State var isShowingSettings: Bool = false
+    
     var body: some View {
         
         VStack {
@@ -311,8 +325,20 @@ struct ContentView: View {
                 .onChange(of: conductor.currentTone) { oldValue, newValue in
                     scrollPosition = scrollPosition == nil ? 0 : (scrollPosition! + 1)
                 }
+            HStack {
+                Spacer()
+                Button {
+                    isShowingSettings = true
+                } label: {
+                    Image(systemName: "gear")
+                }
+                .sheet(isPresented: $isShowingSettings) {
+                    TimingDiagnosticsView(player: conductor.player)
+                }
+            }
          
         }
         .padding()
     }
 }
+

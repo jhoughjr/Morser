@@ -5,7 +5,6 @@
 //  Created by Jimmy Hough Jr on 12/19/24.
 //
 
-
 import Morse
 import AudioKit
 import AVFoundation
@@ -41,8 +40,10 @@ actor Conductor: ObservableObject {
         return duration
     }
     
+    // should not use string but pass words
+    
     /// Assembles tons from an input of Morse words.
-    private func assembledTones(for input: String) -> [Tone] {
+    private func assembledTones(for input: String, ditTime: Double) -> [Tone] {
         print("assembling tones,...")
         print("input = \(input)")
         var tones = [Tone]()
@@ -55,30 +56,30 @@ actor Conductor: ObservableObject {
             print("word \(i) = \(word)")
             let lastCharIndex = word.count - 1
             
-	            for (j,char) in word.enumerated() {
+            for (j,char) in word.enumerated() {
                 print("char \(j) \(char)")
                 switch char {
                 case ".":
                     print("dit")
-                    tones.append( .init(.dit))
+                    tones.append( .init(.dit, ditTime: ditTime))
                     
                     if j != lastCharIndex {
                         print("adding infraspace")
-                        tones.append(.init(.infraSpace))
+                        tones.append(.init(.infraSpace, ditTime: ditTime))
                     }
                 case "-":
                     print("dah")
-                    tones.append(.init(.dah))
+                    tones.append(.init(.dah, ditTime: ditTime))
                     if j != lastCharIndex {
                         print("adding infraspace")
-                        tones.append(.init(.infraSpace))
+                        tones.append(.init(.infraSpace, ditTime: ditTime))
                     }
                 default:
                     print("\(char) unhandled.")
                    
                     if unhandledCount % 3 == 0 {
                         print("found letterspaceß")
-                        tones.append(.init(.letterSpace))
+                        tones.append(.init(.letterSpace, ditTime: ditTime))
                     }else if unhandledCount % 7 == 0 {
                        print("found wordspace")
                     }
@@ -91,7 +92,7 @@ actor Conductor: ObservableObject {
             print("wordspace")
             if i != lastWordIndex {
                 print("addingWOrdspace")
-                tones.append(.init(.wordSpace))
+                tones.append(.init(.wordSpace, ditTime: ditTime))
             }
         }
         return tones
@@ -169,10 +170,14 @@ actor Conductor: ObservableObject {
     }
     
     /// Top level API to turn morse strings into played tones.
-    public func sound(morse: String, with ditTime: Double = 0.2)   {
+    /// - Parameter morse: The morse code string to play.
+    /// - Parameter ditTime: The unit duration (in seconds) for a "dit". This parameter is now fully respected for all playback unit durations.
+    public func sound(morse: String,
+                      with ditTime: Double = 0.2)   {
         print("sound with \(ditTime) dit time.")
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tones = self.sequencedTones(for: self.cleanedTones(for: assembledTones(for: input)))
+        let tones = self.sequencedTones(for: self.cleanedTones(for: assembledTones(for: input,
+                                                                                   ditTime: ditTime)))
         
         Task { @MainActor in
             self.tones = tones
@@ -182,57 +187,57 @@ actor Conductor: ObservableObject {
             print("should take \(await self.calculatedDuration(for: self.tones.map(\.tone))) seconds.")
         }
         
-        
         let start = Date()
         
         Task {
-            do {
-                print("Starting AudioEngine...")
-                try  self.player.engine.start()
-                print("    Started AudioEngine.")
-                
-            }
-            catch {
-                print("error \(error)")
-            }
-            print("Playing tones...")
-            Task { @MainActor in
-                self.isPlaying = true
-                self.playedTones.removeAll()
-                self.unPlayedTones.removeAll()
-                self.unPlayedTones.append(contentsOf: tones)
+            // Using defer to ensure the Play button is always reenabled after playback completes, errors, or cancellations.
+            defer {
+                Task { @MainActor in
+                    self.isPlaying = false
+                }
             }
             
-            for seq in tones {
+            do {
+                try self.player.engine.start()
+                print("Started AudioEngine.")
                 
                 Task { @MainActor in
-                    self.currentTone = seq
-                    if seq.tone.amplitude == 0 {
-                        isSounding = false
-                    }else {
-                        isSounding = true
+                    self.isPlaying = true
+                    self.playedTones.removeAll()
+                    self.unPlayedTones.removeAll()
+                    self.unPlayedTones.append(contentsOf: tones)
+                }
+                
+                print("Playing tones...")
+                for seq in tones {
+                    Task { @MainActor in
+                        self.currentTone = seq
+                        if seq.tone.amplitude == 0 {
+                            self.isSounding = false
+                        } else {
+                            self.isSounding = true
+                        }
+                    }
+                    
+                    await self.player.play(tone: seq.tone )
+                    Task { @MainActor in
+                        self.playedTones.append(seq)
+                        self.unPlayedTones.removeAll(where: { $0.id == seq.id })
                     }
                 }
                 
-                await self.player.play(tone: seq.tone )
-                Task { @MainActor in
-                    self.playedTones.append(seq)
-                    self.unPlayedTones.removeAll(where: { $0.id == seq.id })
-                }
-            }
-            
-            self.player.engine.stop()
-            print("Audio Engine stopped.")
-            Task { @MainActor in
-                self.isPlaying = false
-            }
-            
-            DispatchQueue.main.async {
-                let end = Date()
-                self.playedDuration = end.timeIntervalSince(start)
+                // Removed player.engine.stop() to keep engine started for future playback
                 
-                print("\(end.timeIntervalSince(start)) seconds elapsed.")
-                print("done playing \(input)")
+                DispatchQueue.main.async {
+                    let end = Date()
+                    self.playedDuration = end.timeIntervalSince(start)
+                    
+                    print("\(end.timeIntervalSince(start)) seconds elapsed.")
+                    print("done playing \(input)")
+                }
+                
+            } catch {
+                print("error \(error)")
             }
         }
     }
