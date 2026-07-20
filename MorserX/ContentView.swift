@@ -209,7 +209,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .sheet(isPresented: $isShowingKeyer) {
-                KeyerView(timingController: timingController)
+                KeyerView(player: conductor.player, timingController: timingController)
                     .frame(minWidth: 320, minHeight: 520)
             }
 
