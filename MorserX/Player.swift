@@ -27,27 +27,37 @@ public class Player: ObservableObject {
         }
     }
     
-    public func play(tone: Tone) async {
-        let fadeDuration = 0.01 // seconds (10ms)
-        let fadeSteps = 20
-        let stepDuration = fadeDuration / Double(fadeSteps)
-        
-        func rampAmplitude(from start: Float, to end: Float) async {
-            let delta = (end - start) / Float(fadeSteps)
-            for i in 0...fadeSteps {
-                osc.amplitude = start + delta * Float(i)
-                try? await Task.sleep(for: .seconds(stepDuration))
-            }
-        }
-        
+    public func play(tone: Tone) async throws {
+        // Always start the oscillator so it's ready for audio output.
         osc.amplitude = 0.0
         osc.start()
-        
-        await rampAmplitude(from: 0.0, to: tone.amplitude)
-        let playDuration = max(0.0, Double(tone.duration) - 2 * fadeDuration)
-        try? await Task.sleep(for: .seconds(playDuration))
-        await rampAmplitude(from: tone.amplitude, to: 0.0)
-        osc.amplitude = 0.0
+
+        // Silent tones (spaces) skip the ramp — just wait out the duration.
+        guard tone.amplitude > 0 else {
+            try await Task.sleep(for: .seconds(tone.duration))
+            return
+        }
+
+        // Silence on completion or cancellation.
+        defer { osc.amplitude = 0.0 }
+
+        // Fade scales with tone duration so dit/dah ratio is preserved at all speeds.
+        let fadeDuration = min(0.008, tone.duration * 0.15)
+        let fadeSteps = max(2, Int(fadeDuration * 1000))
+        let stepDuration = fadeDuration / Double(fadeSteps)
+
+        func rampAmplitude(from start: Float, to end: Float) async throws {
+            let delta = (end - start) / Float(fadeSteps)
+            for i in 1...fadeSteps {
+                osc.amplitude = start + delta * Float(i)
+                try await Task.sleep(for: .seconds(stepDuration))
+            }
+        }
+
+        try await rampAmplitude(from: 0.0, to: tone.amplitude)
+        let sustainDuration = max(0.0, tone.duration - 2 * fadeDuration)
+        try await Task.sleep(for: .seconds(sustainDuration))
+        try await rampAmplitude(from: tone.amplitude, to: 0.0)
     }
     
     // Add a diagnostic function to Player to test timing accuracy.
@@ -68,7 +78,7 @@ public class Player: ObservableObject {
             let expected = Double(count) * value
             let start = Date()
             for _ in 0..<count {
-                await self.play(tone: Tone(.dit, ditTime: value))
+                try? await self.play(tone: Tone(.dit, ditTime: value))
             }
             let actual = Date().timeIntervalSince(start)
             results.append((id, value, expected, actual))

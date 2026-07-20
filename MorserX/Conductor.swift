@@ -33,7 +33,24 @@ actor Conductor: ObservableObject {
     }
     
     nonisolated let player:Player = Player()
-    
+    var currentDitTime: Double = 0.2
+
+    var playbackTask: Task<Void, Never>? = nil
+
+    func setDitTime(_ time: Double) {
+        self.currentDitTime = time
+    }
+
+    func stop() {
+        playbackTask?.cancel()
+        playbackTask = nil
+        player.osc.amplitude = 0.0
+        Task { @MainActor in
+            self.isPlaying = false
+            self.isSounding = false
+        }
+    }
+
     /// I should probably ensure i calulate from cleaned tones.
     private func calculatedDuration(for tones:[Tone]) -> TimeInterval {
         let duration = tones.reduce(0) { $0 + $1.duration }
@@ -132,7 +149,6 @@ actor Conductor: ObservableObject {
             filteredInput.append(p)
         }
         
-        print("reurning \(filteredInput.count) tones")
         return filteredInput
     }
     
@@ -174,7 +190,7 @@ actor Conductor: ObservableObject {
     /// - Parameter ditTime: The unit duration (in seconds) for a "dit". This parameter is now fully respected for all playback unit durations.
     public func sound(morse: String,
                       with ditTime: Double = 0.2)   {
-        print("sound with \(ditTime) dit time.")
+        self.currentDitTime = ditTime
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
         let tones = self.sequencedTones(for: self.cleanedTones(for: assembledTones(for: input,
                                                                                    ditTime: ditTime)))
@@ -183,33 +199,30 @@ actor Conductor: ObservableObject {
             self.tones = tones
             self.playedDuration = 0
             self.totalDuration = await self.calculatedDuration(for: self.tones.map(\.tone))
-            print("playing \(self.tones.count) tones.")
-            print("should take \(await self.calculatedDuration(for: self.tones.map(\.tone))) seconds.")
         }
         
         let start = Date()
         
-        Task {
-            // Using defer to ensure the Play button is always reenabled after playback completes, errors, or cancellations.
+        self.playbackTask = Task {
             defer {
                 Task { @MainActor in
                     self.isPlaying = false
                 }
             }
-            
+
             do {
                 try self.player.engine.start()
-                print("Started AudioEngine.")
-                
+
                 Task { @MainActor in
                     self.isPlaying = true
                     self.playedTones.removeAll()
                     self.unPlayedTones.removeAll()
                     self.unPlayedTones.append(contentsOf: tones)
                 }
-                
-                print("Playing tones...")
+
                 for seq in tones {
+                    if Task.isCancelled { break }
+
                     Task { @MainActor in
                         self.currentTone = seq
                         if seq.tone.amplitude == 0 {
@@ -218,24 +231,27 @@ actor Conductor: ObservableObject {
                             self.isSounding = true
                         }
                     }
-                    
-                    await self.player.play(tone: seq.tone )
+
+                    let liveTone: Tone
+                    if let symbol = Morse.Symbols(rawValue: seq.tone.morse) {
+                        liveTone = Tone(symbol, ditTime: self.currentDitTime)
+                    } else {
+                        liveTone = seq.tone
+                    }
+                    try await self.player.play(tone: liveTone)
                     Task { @MainActor in
                         self.playedTones.append(seq)
                         self.unPlayedTones.removeAll(where: { $0.id == seq.id })
                     }
                 }
-                
-                // Removed player.engine.stop() to keep engine started for future playback
-                
+
                 DispatchQueue.main.async {
                     let end = Date()
                     self.playedDuration = end.timeIntervalSince(start)
-                    
-                    print("\(end.timeIntervalSince(start)) seconds elapsed.")
-                    print("done playing \(input)")
                 }
-                
+
+            } catch is CancellationError {
+                // stopped by user — defer handles isPlaying reset
             } catch {
                 print("error \(error)")
             }
