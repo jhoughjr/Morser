@@ -17,7 +17,14 @@ class Keyer: ObservableObject {
     @Published var isDahActive = false
 
     var ditTime: Double = 0.1
-    nonisolated let player = Player()
+
+    /// Shared with the Conductor — a second Player would mean a second AVAudioEngine
+    /// and a second render thread on the same output device.
+    nonisolated let player: Player
+
+    init(player: Player) {
+        self.player = player
+    }
 
     private var ditTask: Task<Void, Never>?
     private var spaceTask: Task<Void, Never>?
@@ -32,10 +39,9 @@ class Keyer: ObservableObject {
         ditTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                self.player.osc.amplitude = 1.0
-                self.player.osc.start()
+                self.player.keyDown()
                 do { try await Task.sleep(for: .seconds(self.ditTime)) } catch { break }
-                self.player.osc.amplitude = 0.0
+                self.player.keyUp()
                 self.currentChar += "."
                 do { try await Task.sleep(for: .seconds(self.ditTime)) } catch { break }
             }
@@ -47,7 +53,7 @@ class Keyer: ObservableObject {
         isDitActive = false
         ditTask?.cancel()
         ditTask = nil
-        player.osc.amplitude = 0.0
+        player.keyUp()
         scheduleSpacing()
     }
 
@@ -57,14 +63,13 @@ class Keyer: ObservableObject {
         guard !isDahActive else { return }
         isDahActive = true
         spaceTask?.cancel()
-        player.osc.amplitude = 1.0
-        player.osc.start()
+        player.keyDown()
     }
 
     func dahUp() {
         guard isDahActive else { return }
         isDahActive = false
-        player.osc.amplitude = 0.0
+        player.keyUp()
         currentChar += "-"
         scheduleSpacing()
     }
@@ -123,7 +128,7 @@ class Keyer: ObservableObject {
         currentChar = ""
         history = []
         decodedText = ""
-        player.osc.amplitude = 0.0
+        player.keyUp()
         isDitActive = false
         isDahActive = false
     }
@@ -177,9 +182,14 @@ struct PaddleButton: View {
 // MARK: - Keyer View
 
 struct KeyerView: View {
-    @StateObject private var keyer = Keyer()
+    @StateObject private var keyer: Keyer
     @ObservedObject var timingController: Controllers.TimingController
     @State private var keyMonitor: Any?
+
+    init(player: Player, timingController: Controllers.TimingController) {
+        _keyer = StateObject(wrappedValue: Keyer(player: player))
+        self.timingController = timingController
+    }
 
     var body: some View {
         VStack(spacing: 20) {

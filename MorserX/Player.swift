@@ -4,85 +4,174 @@
 //
 //  Created by Jimmy Hough Jr on 12/16/24.
 //
+//  Hosts one AVAudioEngine for both jobs:
+//
+//    • transmissions — pre-rendered whole and scheduled on a player node, so
+//      CoreAudio clocks the timing instead of Task.sleep
+//    • the keyer sidetone — a source node gated in its render callback, so
+//      key-down latency stays at one buffer instead of a task hop
+//
+//  Previously each of those ran its own AudioEngine (Conductor owned one, Keyer
+//  owned another), which meant two render threads competing for the same device.
+//
 
-import AudioKit
+import AVFoundation
 import SwiftUI
 
-public class Player: ObservableObject {
-    
-    nonisolated let engine = AudioEngine()
-    nonisolated let osc = PlaygroundOscillator(waveform: Table(.sawtooth))
-    
-    func setManualRenderingBufferSize(bytes:UInt32) {
-    
-    }
+// MARK: - Sidetone state
+//
+// Touched by the render thread every callback. Kept in a class so the callback
+// mutates one shared instance rather than a captured copy, and marked unchecked
+// because the render thread is the only writer of phase/gain.
+private final class SidetoneState: @unchecked Sendable {
+    var phase: Double = 0
+    var gain: Float = 0            // 0…1, smoothed toward `target`
+    var target: Float = 0          // written from the main thread on key up/down
+    var phaseStep: Double = 2 * .pi * 600 / 48_000
+    var gainStep: Float = 1.0 / (0.005 * 48_000)   // 5ms to full scale
+    var amplitude: Float = 0.35
+}
+
+public final class Player: ObservableObject {
+
+    let engine = AVAudioEngine()
+
+    private let transmission = AVAudioPlayerNode()
+    private var sidetone: AVAudioSourceNode?
+    private let sidetoneState = SidetoneState()
+
+    private(set) var renderer = MorseRenderer()
+    private var renderFormat: AVAudioFormat
+
+    /// Frames in the transmission currently scheduled, for end-of-playback detection.
+    private(set) var scheduledFrames: Int = 0
+
     init() {
-        
-        engine.output = osc
-        print("Engine:\(engine.connectionTreeDescription)")
+        // Match the hardware rate so nothing resamples underneath us — a resampler
+        // between us and the device would reintroduce the timing slop we just removed.
+        let hardwareRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        let rate = hardwareRate > 0 ? hardwareRate : 48_000
+
+        renderer.sampleRate = rate
+        renderFormat = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)
+            ?? engine.outputNode.outputFormat(forBus: 0)
+
+        sidetoneState.phaseStep = 2 * .pi * renderer.frequency / rate
+        sidetoneState.gainStep = 1.0 / Float(renderer.rampSeconds * rate)
+        sidetoneState.amplitude = renderer.amplitude
+
+        engine.attach(transmission)
+        engine.connect(transmission, to: engine.mainMixerNode, format: renderFormat)
+
+        let source = makeSidetoneNode(format: renderFormat)
+        sidetone = source
+        engine.attach(source)
+        engine.connect(source, to: engine.mainMixerNode, format: renderFormat)
+
+        start()
+    }
+
+    private func makeSidetoneNode(format: AVAudioFormat) -> AVAudioSourceNode {
+        let state = sidetoneState
+        return AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList in
+            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
+
+            for frame in 0..<Int(frameCount) {
+                // Walk the linear gain toward the target, then shape it. Shaping the
+                // ramp (rather than switching amplitude outright) is what keeps the
+                // key from clicking.
+                if state.gain < state.target {
+                    state.gain = min(state.target, state.gain + state.gainStep)
+                } else if state.gain > state.target {
+                    state.gain = max(state.target, state.gain - state.gainStep)
+                }
+
+                let shaped = 0.5 * (1 - cos(Double(state.gain) * Double.pi))
+                let sample = Float(sin(state.phase) * shaped) * state.amplitude
+
+                state.phase += state.phaseStep
+                if state.phase > 2 * .pi { state.phase -= 2 * .pi }
+
+                for buffer in buffers {
+                    let pointer = UnsafeMutableBufferPointer<Float>(buffer)
+                    if frame < pointer.count { pointer[frame] = sample }
+                }
+            }
+            return noErr
+        }
+    }
+
+    // MARK: - Engine lifecycle
+
+    func start() {
+        guard !engine.isRunning else { return }
         do {
             try engine.start()
         } catch {
             print("Failed to start engine: \(error)")
         }
     }
-    
-    public func play(tone: Tone) async throws {
-        // Always start the oscillator so it's ready for audio output.
-        osc.amplitude = 0.0
-        osc.start()
 
-        // Silent tones (spaces) skip the ramp — just wait out the duration.
-        guard tone.amplitude > 0 else {
-            try await Task.sleep(for: .seconds(tone.duration))
-            return
+    // MARK: - Transmissions
+
+    /// Renders `tones` and schedules the lot in one call.
+    /// - Returns: the frame layout, so a caller can follow along off the audio clock.
+    @discardableResult
+    func play(tones: [Tone]) -> [ToneSpan] {
+        stop()
+        start()
+
+        guard let (buffer, spans) = renderer.render(tones, format: renderFormat) else {
+            return []
         }
 
-        // Silence on completion or cancellation.
-        defer { osc.amplitude = 0.0 }
-
-        // Fade scales with tone duration so dit/dah ratio is preserved at all speeds.
-        let fadeDuration = min(0.008, tone.duration * 0.15)
-        let fadeSteps = max(2, Int(fadeDuration * 1000))
-        let stepDuration = fadeDuration / Double(fadeSteps)
-
-        func rampAmplitude(from start: Float, to end: Float) async throws {
-            let delta = (end - start) / Float(fadeSteps)
-            for i in 1...fadeSteps {
-                osc.amplitude = start + delta * Float(i)
-                try await Task.sleep(for: .seconds(stepDuration))
-            }
-        }
-
-        try await rampAmplitude(from: 0.0, to: tone.amplitude)
-        let sustainDuration = max(0.0, tone.duration - 2 * fadeDuration)
-        try await Task.sleep(for: .seconds(sustainDuration))
-        try await rampAmplitude(from: tone.amplitude, to: 0.0)
+        scheduledFrames = spans.last?.endFrame ?? 0
+        transmission.scheduleBuffer(buffer, at: nil, options: [])
+        transmission.play()
+        return spans
     }
-    
-    // Add a diagnostic function to Player to test timing accuracy.
-    // It sweeps a range of ditTime values, plays 10 dits each, and logs expected/actual durations.
-    // Returns a list of (ditTime, expected, actual) tuples for display or analysis.
-    //
-    // API:
-    //   public func diagnoseTiming(sweep: [Double]) async -> [(ditTime: Double, expected: Double, actual: Double)]
-    //
-    // Usage example:
-    //   let results = await player.diagnoseTiming(sweep: stride(from: 0.005, through: 0.1, by: 0.005).map { $0 })
-    
-    public func diagnoseTiming(sweep: [Double]) async -> [(id:Int,ditTime: Double, expected: Double, actual: Double)] {
-        var results: [(Int,Double, Double, Double)] = []
-        for value in sweep {
-            let id = Int(value * 1000)
+
+    func stop() {
+        transmission.stop()
+        scheduledFrames = 0
+    }
+
+    /// Where the audio hardware actually is, in frames since this transmission started,
+    /// or nil when nothing is playing. This is the clock the UI should follow.
+    var currentFrame: Int? {
+        guard transmission.isPlaying,
+              let nodeTime = transmission.lastRenderTime,
+              let playerTime = transmission.playerTime(forNodeTime: nodeTime)
+        else { return nil }
+        return Int(playerTime.sampleTime)
+    }
+
+    // MARK: - Keyer sidetone
+
+    func keyDown() { sidetoneState.target = 1 }
+    func keyUp()   { sidetoneState.target = 0 }
+
+    // MARK: - Diagnostics
+
+    func setManualRenderingBufferSize(bytes: UInt32) {
+        // Buffer size is negotiated with the device; retained so the diagnostics
+        // panel keeps building. Timing no longer depends on it.
+    }
+
+    /// Sweeps ditTime and reports rendered vs. ideal duration.
+    ///
+    /// This used to play the tones and stopwatch them, which measured the scheduler
+    /// more than the audio. It now measures the frame layout that actually reaches
+    /// the device, so any residual error is rounding — sub-frame, not milliseconds.
+    public func diagnoseTiming(sweep: [Double]) async -> [(id: Int, ditTime: Double, expected: Double, actual: Double)] {
+        sweep.map { ditTime in
             let count = 10
-            let expected = Double(count) * value
-            let start = Date()
-            for _ in 0..<count {
-                try? await self.play(tone: Tone(.dit, ditTime: value))
-            }
-            let actual = Date().timeIntervalSince(start)
-            results.append((id, value, expected, actual))
+            let tones = (0..<count).map { _ in Tone(.dit, ditTime: ditTime) }
+            let frames = renderer.totalFrames(for: tones)
+            return (id: Int(ditTime * 1000),
+                    ditTime: ditTime,
+                    expected: Double(count) * ditTime,
+                    actual: Double(frames) / renderer.sampleRate)
         }
-        return results
     }
 }
