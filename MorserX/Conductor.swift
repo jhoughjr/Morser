@@ -54,11 +54,36 @@ actor Conductor: ObservableObject {
         guard time != currentDitTime else { return }
         self.currentDitTime = time
 
+        guard !loadedSequence.isEmpty else { return }
+
         // Re-render from wherever the audio is now, so dragging the slider
         // retimes what hasn't been heard yet.
-        if playbackTask != nil, !loadedSequence.isEmpty {
+        if playbackTask != nil {
             let resumeAt = currentIndex() ?? 0
             schedule(from: resumeAt, ditTime: time)
+        } else {
+            // Idle: nothing to re-schedule, but the loaded sequence is what the
+            // strip and its time ruler are drawn from, so it has to be retimed too.
+            retimeLoadedSequence(to: time)
+        }
+    }
+
+    /// Rebuilds the loaded sequence's durations at `ditTime`, keeping ids stable.
+    private func retimeLoadedSequence(to ditTime: Double) {
+        let retimed = loadedSequence.map { seq -> Tone in
+            if let symbol = Morse.Symbols(rawValue: seq.tone.morse) {
+                return Tone(symbol, ditTime: ditTime)
+            }
+            return seq.tone
+        }
+        let sequence = sequencedTones(for: retimed)
+        loadedSequence = sequence
+
+        let total = calculatedDuration(for: retimed)
+        Task { @MainActor in
+            self.tones = sequence
+            self.unPlayedTones = sequence
+            self.totalDuration = total
         }
     }
 
@@ -183,11 +208,19 @@ actor Conductor: ObservableObject {
         return sequence
     }
 
-    /// Top level API to turn morse strings into played tones.
-    /// - Parameter morse: The morse code string to play.
-    /// - Parameter ditTime: The unit duration (in seconds) for a "dit". This parameter is now fully respected for all playback unit durations.
-    public func sound(morse: String,
-                      with ditTime: Double = 0.2)   {
+    /// Builds the tone sequence for `morse` and publishes it *without* playing.
+    ///
+    /// The sequencer strip reads `tones`, so this is what lets it fill in as you
+    /// type. Loading used to be welded to playback, which meant the strip stayed
+    /// empty — showing its "type text above" placeholder over perfectly good
+    /// text — until you pressed Play.
+    /// - Parameter morse: The morse code string to sequence.
+    /// - Parameter ditTime: The unit duration (in seconds) for a "dit".
+    public func load(morse: String,
+                     with ditTime: Double = 0.2) {
+        // Retyping mid-transmission invalidates what the engine is sounding.
+        if playbackTask != nil { stop() }
+
         self.currentDitTime = ditTime
 
         let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -202,8 +235,16 @@ actor Conductor: ObservableObject {
             self.unPlayedTones = sequence
             self.playedDuration = 0
             self.totalDuration = total
+            self.currentTone = nil
         }
+    }
 
+    /// Top level API to turn morse strings into played tones.
+    /// - Parameter morse: The morse code string to play.
+    /// - Parameter ditTime: The unit duration (in seconds) for a "dit". This parameter is now fully respected for all playback unit durations.
+    public func sound(morse: String,
+                      with ditTime: Double = 0.2)   {
+        load(morse: morse, with: ditTime)
         schedule(from: 0, ditTime: ditTime)
     }
 

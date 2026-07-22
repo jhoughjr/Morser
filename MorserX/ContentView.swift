@@ -15,8 +15,18 @@ struct Controllers {
     }
 
     class MorseController: ObservableObject {
-        @Published var morseText: String = "hello world"
+        /// Encoding is a property of the text, not something a view has to remember
+        /// to trigger. It used to be driven by the TextField's `onChange`, which meant
+        /// the launch value was never encoded — the field read "hello world" while
+        /// `morseCode` was still empty, so Play had nothing to sequence.
+        @Published var morseText: String = "hello world" {
+            didSet { convertToMorse() }
+        }
         @Published var morseCode: String = ""
+
+        init() {
+            convertToMorse()
+        }
 
         public func convertToMorse() {
             morseCode = Morse.morse(from: morseText)
@@ -164,10 +174,12 @@ class HoverWatcher: ObservableObject {
 
 struct ContentView: View {
 
-    @ObservedObject var morseController = Controllers.MorseController()
-    @ObservedObject var conductor = Conductor()
-    @ObservedObject var timingController = Controllers.TimingController()
-    @ObservedObject var hoverWatcher = HoverWatcher()
+    // These are owned by the view, not handed to it — @ObservedObject on an inline
+    // initializer makes the object a fresh instance every time the struct is rebuilt.
+    @StateObject private var morseController = Controllers.MorseController()
+    @StateObject private var conductor = Conductor()
+    @StateObject private var timingController = Controllers.TimingController()
+    @StateObject private var hoverWatcher = HoverWatcher()
 
     @State private var scrollPosition: Int? = 0
     @State private var isShowingSettings = false
@@ -188,6 +200,16 @@ struct ContentView: View {
             morseScrollStrip
             Divider()
             controlsSection
+        }
+        .task {
+            // The launch text is already encoded; sequence it so the strip has
+            // something in it before the user touches anything.
+            await conductor.load(morse: morseController.morseCode,
+                                 with: timingController.ditTime)
+        }
+        .onChange(of: morseController.morseCode) { _, code in
+            scrollPosition = 0
+            Task { await conductor.load(morse: code, with: timingController.ditTime) }
         }
         .onChange(of: timingController.ditTime) { _, newValue in
             Task { await conductor.setDitTime(newValue) }
@@ -235,9 +257,6 @@ struct ContentView: View {
             TextField("Enter text...", text: $morseController.morseText,
                       prompt: Text("Hello, world!"))
                 .textFieldStyle(.roundedBorder)
-                .onChange(of: morseController.morseText) { _, _ in
-                    morseController.convertToMorse()
-                }
 
             if !morseController.morseCode.isEmpty {
                 Text(morseController.morseCode)
