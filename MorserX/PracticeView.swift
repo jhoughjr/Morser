@@ -18,6 +18,8 @@ struct PracticeView: View {
     @FocusState private var answerFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
+    @State private var recorder = FistRecorder()
+    @State private var isKeyDown = false
     @State private var deadlineElapsed: Double = 0
     @State private var keyMonitor: Any?
     @State private var deadlineTask: Task<Void, Never>?
@@ -43,6 +45,10 @@ struct PracticeView: View {
                     roundSection
                     if session.phase == .graded, let grade = session.grade {
                         gradeSection(grade)
+                    }
+                    if session.phase == .graded, let report = session.fistReport {
+                        Divider()
+                        fistSection(report)
                     }
                     if !session.weakest.isEmpty {
                         Divider()
@@ -129,7 +135,7 @@ struct PracticeView: View {
                     .font(.system(size: 12, design: .monospaced))
                     .lineLimit(2...4)
 
-            case .koch, .callsigns, .qso, .words, .headCopy, .instant:
+            case .koch, .callsigns, .qso, .words, .headCopy, .instant, .sending:
                 EmptyView()
             }
         }
@@ -253,15 +259,29 @@ struct PracticeView: View {
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
 
-                case .sending:
+                case .sending where session.answerMethod != .keyed:
                     Label("Sending — listen", systemImage: "waveform")
                         .font(.callout)
                         .foregroundStyle(.orange)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)
 
+                case .sending:
+                    EmptyView()
+
                 case .answering:
-                    if session.answerMethod == .typed {
+                    if session.answerMethod == .keyed {
+                        Button {
+                            markKeyedRound()
+                        } label: {
+                            Label("Mark it", systemImage: "checkmark.seal")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(recorder.presses.isEmpty)
+                    } else if session.answerMethod == .typed {
                         Button {
                             submit()
                         } label: {
@@ -313,6 +333,9 @@ struct PracticeView: View {
 
             case .singleKey:
                 singleKeyRow
+
+            case .keyed:
+                straightKeyRow
             }
 
             HStack {
@@ -336,6 +359,7 @@ struct PracticeView: View {
             case .typed:        return "Return to check"
             case .selfReported: return "Did you get it?"
             case .singleKey:    return "Press the character you heard"
+            case .keyed:        return "Hold space (or the key below) to send · Return to mark it"
             }
         case .graded:    return "Return for the next round"
         }
@@ -370,6 +394,106 @@ struct PracticeView: View {
         }
         .disabled(session.phase != .answering)
         .opacity(session.phase == .answering ? 1 : 0.35)
+    }
+
+    // MARK: - Straight key
+
+    /// One control, and the length of the press is yours.
+    ///
+    /// The paddle in the keyer sheet auto-streams dits on a timer, so its timing
+    /// is the machine's rather than the operator's — there is no fist to grade on
+    /// an input that is already perfect.
+    private var straightKeyRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(session.prompt.uppercased())
+                .font(.system(size: 28, weight: .bold, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 6)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(isKeyDown ? Color.green : Color.green.opacity(0.12))
+                    .shadow(color: isKeyDown ? .green.opacity(0.7) : .clear, radius: 16)
+                    .animation(.easeInOut(duration: 0.04), value: isKeyDown)
+
+                VStack(spacing: 4) {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: 26, weight: .semibold))
+                    Text("hold to send · space")
+                        .font(.caption2)
+                }
+                .foregroundStyle(isKeyDown ? .white : .green)
+            }
+            .frame(height: 88)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in keyDown() }
+                    .onEnded { _ in keyUp() }
+            )
+
+            Text(recorder.presses.isEmpty
+                 ? "Nothing keyed yet"
+                 : "\(recorder.presses.count) elements sent")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .disabled(session.phase != .answering)
+        .opacity(session.phase == .answering ? 1 : 0.4)
+    }
+
+    private func keyDown() {
+        guard session.phase == .answering, !isKeyDown else { return }
+        isKeyDown = true
+        recorder.down(at: Date().timeIntervalSinceReferenceDate)
+        conductor.player.keyDown()
+    }
+
+    private func keyUp() {
+        guard isKeyDown else { return }
+        isKeyDown = false
+        recorder.up(at: Date().timeIntervalSinceReferenceDate)
+        conductor.player.keyUp()
+    }
+
+    private func markKeyedRound() {
+        guard !recorder.presses.isEmpty else { return }
+        session.submitKeyed(presses: recorder.presses)
+        recorder.reset()
+        isKeyDown = false
+    }
+
+    /// What the fist looked like from outside — the half you can't hear yourself.
+    private func fistSection(_ report: FistReport) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionHeading("Your fist",
+                           systemImage: report.isClean ? "hand.thumbsup.fill" : "waveform.badge.exclamationmark",
+                           tint: report.isClean ? .green : .orange)
+
+            HStack(spacing: 14) {
+                Label(String(format: "%.0f wpm", report.wpm), systemImage: "speedometer")
+                if let dahRatio = report.dahRatio {
+                    Label(String(format: "dah %.1f×", dahRatio), systemImage: "minus")
+                }
+                if let letterGap = report.letterGapRatio {
+                    Label(String(format: "letter gap %.1f×", letterGap), systemImage: "space")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+
+            if report.isClean {
+                Text("Readable — nothing to fix.")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else {
+                ForEach(report.notes, id: \.self) { note in
+                    Label(note, systemImage: "arrow.right")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
     }
 
     // MARK: - Instant recognition
@@ -418,6 +542,16 @@ struct PracticeView: View {
     // MARK: - Answering
 
     private func beginAnswering() {
+        if session.answerMethod == .keyed {
+            recorder.reset()
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
+                guard !event.isARepeat, event.charactersIgnoringModifiers == " " else { return event }
+                event.type == .keyDown ? keyDown() : keyUp()
+                return nil
+            }
+            return
+        }
+
         guard session.answerMethod == .singleKey else { return }
 
         // One key, no Return: a text field would put an edit-and-confirm step in
@@ -451,6 +585,7 @@ struct PracticeView: View {
     private func endAnswering() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        if isKeyDown { keyUp() }
         deadlineTask?.cancel()
         deadlineTask = nil
         deadlineElapsed = 0

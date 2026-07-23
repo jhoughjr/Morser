@@ -179,6 +179,8 @@ final class PracticeSession: ObservableObject {
     @Published private(set) var prompt: String = ""
     @Published var answer: String = ""
     @Published private(set) var grade: Grade?
+    /// How well-formed the sending was, for drills you key rather than copy.
+    @Published private(set) var fistReport: FistReport?
     @Published private(set) var scores: [Character: CharacterScore] = [:]
 
     @Published var groupSize: Int = 5
@@ -326,7 +328,20 @@ final class PracticeSession: ObservableObject {
         prompt = text
         answer = ""
         grade = nil
-        phase = .sending
+        fistReport = nil
+
+        // Nothing is played for a drill you send: the prompt is on screen and
+        // the round starts the moment it appears.
+        phase = drill.answerMethod == .keyed ? .answering : .sending
+        if phase == .answering { sentAt = Date() }
+    }
+
+    /// Grades a keyed round by reading the timings back.
+    @discardableResult
+    func submitKeyed(presses: [Press]) -> Grade {
+        fistReport = FistReport.measure(presses)
+        answer = FistDecoder.decode(presses).text
+        return submit()
     }
 
     /// The prompt as morse, ready for the conductor.

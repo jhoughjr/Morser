@@ -1,9 +1,9 @@
 # Practice modes — plan
 
-**Status:** phases 0a, 0b, 1, 2 and 3 are done. 0a shipped as Morse.swift v1.0.0
+**Status:** phases 0a, 0b, 1, 2, 3 and 4 are done. 0a shipped as Morse.swift v1.0.0
 (jhoughjr/Morse.swift#1); 0b and 1 landed together, since the generators are
 nearly free once the seam exists and doing them separately means paying for the
-same context three times over. Phases 4 and 5 are still as written below.
+same context three times over. Phase 5 — pileup — is still as written below.
 
 Ordered easiest to hardest. Cost is in PRs, not days, because the sizes differ by
 an order of magnitude and calendar estimates would be fiction.
@@ -134,7 +134,7 @@ per-character latency in the stat model (phase 0 pays for itself here).
 character speed goes up on its own instead of you deciding. Small, and it depends
 only on stats that already exist.
 
-## Phase 4 — send practice
+## Phase 4 — send practice ✅ done
 
 The valuable one, and the one where this app is unusual: it already owns a keyer
 and an audio engine, and almost no trainer marks your *fist*.

@@ -79,10 +79,13 @@ enum AnswerMethod: Sendable {
     case selfReported
     /// One key, no Return. Anything slower than a reflex isn't recognition.
     case singleKey
+    /// You send it. Nothing is played — the prompt is on screen and the answer
+    /// comes off the key.
+    case keyed
 }
 
 enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
-    case koch, characterSet, callsigns, qso, words, headCopy, instant, custom
+    case koch, characterSet, callsigns, qso, words, headCopy, instant, sending, custom
 
     var id: String { rawValue }
 
@@ -95,6 +98,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .words:        return "Words"
         case .headCopy:     return "Head copy"
         case .instant:      return "Instant"
+        case .sending:      return "Sending"
         case .custom:       return "My text"
         }
     }
@@ -108,6 +112,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .words:        return "Whole words, heard as one shape rather than spelled out"
         case .headCopy:     return "One word, nothing to write on — did you get it?"
         case .instant:      return "One character against the clock; the metric is how fast, not just whether"
+        case .sending:      return "You key it, and it marks your fist as well as your text"
         case .custom:       return "Whatever you paste in"
         }
     }
@@ -121,6 +126,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .words:        return WordsDrill()
         case .headCopy:     return HeadCopyDrill()
         case .instant:      return InstantDrill()
+        case .sending:      return SendingDrill()
         case .custom:       return CustomTextDrill()
         }
     }
@@ -346,6 +352,25 @@ struct InstantDrill: PracticeDrill {
     func makePrompt(_ context: DrillContext) -> String {
         guard let character = context.pick(from: KochDrill().weightedBag(context)) else { return "" }
         return String(character)
+    }
+}
+
+// MARK: - Sending
+
+/// The other direction: you send, and it reads you back.
+///
+/// Almost no trainer marks your fist, which is the half you can't self-assess —
+/// you can hear that you sent GAT for CAT, but not that your dahs are twice your
+/// dits rather than three times, because to you they sound like dahs.
+struct SendingDrill: PracticeDrill {
+    let mode = PracticeMode.sending
+    let answerMethod = AnswerMethod.keyed
+
+    func makePrompt(_ context: DrillContext) -> String {
+        let words = WordsDrill.vocabulary(context)
+        // Two words: enough to need a word gap, which is the spacing most
+        // beginners drop, and short enough to key without losing the thread.
+        return (0..<2).compactMap { _ in context.pick(from: words) }.joined(separator: " ")
     }
 }
 
