@@ -30,7 +30,10 @@ struct PracticeView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    alphabetSection
+                    modeSection
+                    if !session.alphabet.isEmpty || session.drill.usesLevels {
+                        alphabetSection
+                    }
                     speedSection
                     Divider()
                     roundSection
@@ -58,7 +61,9 @@ struct PracticeView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Practice")
                     .font(.headline)
-                Text("Koch method · level \(session.level) of \(PracticeSession.kochOrder.count)")
+                Text(session.drill.usesLevels
+                     ? "\(session.mode.title) · level \(session.level) of \(PracticeSession.kochOrder.count)"
+                     : session.mode.summary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -85,6 +90,43 @@ struct PracticeView: View {
         }
     }
 
+    // MARK: - Mode
+
+    private var modeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeading("Drill", systemImage: "dial.medium", tint: .purple)
+
+            Picker("", selection: $session.mode) {
+                ForEach(PracticeMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            switch session.mode {
+            case .characterSet:
+                Picker("Set", selection: $session.characterSet) {
+                    ForEach(CharacterSetChoice.allCases) { choice in
+                        Text(choice.title).tag(choice)
+                    }
+                }
+                .pickerStyle(.menu)
+                .font(.caption)
+                .fixedSize()
+
+            case .custom:
+                TextField("Text to drill against", text: $session.customText, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12, design: .monospaced))
+                    .lineLimit(2...4)
+
+            case .koch, .callsigns, .qso:
+                EmptyView()
+            }
+        }
+    }
+
     // MARK: - Alphabet
 
     private var alphabetSection: some View {
@@ -92,19 +134,21 @@ struct PracticeView: View {
             HStack {
                 sectionHeading("In play", systemImage: "character.book.closed")
                 Spacer()
-                Button {
-                    session.retreat()
-                } label: {
-                    Image(systemName: "minus")
-                }
-                .disabled(session.level <= PracticeSession.minimumLevel)
+                if session.drill.usesLevels {
+                    Button {
+                        session.retreat()
+                    } label: {
+                        Image(systemName: "minus")
+                    }
+                    .disabled(session.level <= PracticeSession.minimumLevel)
 
-                Button {
-                    session.advance()
-                } label: {
-                    Image(systemName: "plus")
+                    Button {
+                        session.advance()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(session.nextCharacter == nil)
                 }
-                .disabled(session.nextCharacter == nil)
             }
 
             // A wrapping row would need a layout; the alphabet is short enough
