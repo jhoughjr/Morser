@@ -266,6 +266,54 @@ actor Conductor: ObservableObject {
         }
     }
 
+    /// Builds tones straight from the text, one character at a time, so each can
+    /// carry its own pitch.
+    ///
+    /// The string-based path can't do this: by the time text is a run of dots and
+    /// dashes, which symbol belongs to which character is only recoverable by
+    /// counting spaces in threes. Here the characters are still characters.
+    func pitchedTones(for text: String,
+                      ditTime: Double,
+                      spaceDitTime: Double? = nil,
+                      pitch: (Character) -> Float?) -> [Tone] {
+        var tones: [Tone] = []
+        let spacing = spaceDitTime ?? ditTime
+
+        for (wordIndex, word) in text.split(separator: " ").enumerated() {
+            if wordIndex > 0 { tones.append(Tone(.wordSpace, ditTime: spacing)) }
+
+            for (characterIndex, character) in word.enumerated() {
+                guard let code = Morse.code(for: character) else { continue }
+                if characterIndex > 0 { tones.append(Tone(.letterSpace, ditTime: spacing)) }
+
+                // Uppercased, so a caller's table doesn't have to hold both cases.
+                let note = pitch(Character(String(character).uppercased()))
+                for (symbolIndex, symbol) in code.enumerated() {
+                    if symbolIndex > 0 { tones.append(Tone(.infraSpace, ditTime: ditTime)) }
+                    tones.append(Tone(symbol == "." ? .dit : .dah, ditTime: ditTime, pitch: note))
+                }
+            }
+        }
+        return tones
+    }
+
+    /// Sounds text with a pitch per character, without loading the sequencer.
+    public func sing(_ text: String,
+                     ditTime: Double,
+                     spaceDitTime: Double? = nil,
+                     pitch: @escaping (Character) -> Float?) {
+        stop()
+
+        let tones = pitchedTones(for: text, ditTime: ditTime, spaceDitTime: spaceDitTime, pitch: pitch)
+        let spans = player.play(tones: tones)
+        guard let last = spans.last else { return }
+
+        Task { @MainActor in self.isPlaying = true }
+        playbackTask = Task { [weak self] in
+            await self?.followSilently(untilFrame: last.endFrame)
+        }
+    }
+
     /// Suspends until whatever is currently sounding has finished.
     public func waitForSending() async {
         await playbackTask?.value

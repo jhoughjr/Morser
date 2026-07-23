@@ -91,16 +91,24 @@ struct MorseRenderer {
         let out = channels[0]
         out.update(repeating: 0, count: total)
 
-        let phaseStep = 2.0 * Double.pi * frequency / sampleRate
+        // Phase is accumulated rather than computed from the frame index, because
+        // elements can now differ in pitch: `sin(step × frame)` is only continuous
+        // while `step` never changes, and a phase jump at a pitch change is a click
+        // that no envelope can hide. Accumulating carries the waveform across the
+        // boundary whatever the pitch does.
+        var phase = 0.0
 
-        for span in spans where span.isSounding && span.frameCount > 0 {
+        for span in spans where span.frameCount > 0 {
+            let step = 2.0 * Double.pi * pitch(for: span, in: tones) / sampleRate
             let ramp = min(Int(rampSeconds * sampleRate), span.frameCount / 2)
+            let sounding = span.isSounding
 
             for i in 0..<span.frameCount {
-                let frame = span.startFrame + i
-                // Phase runs off the absolute frame index, so the sine stays continuous
-                // across element boundaries and the envelope is the only thing shaping it.
-                out[frame] = Float(sin(phaseStep * Double(frame)) * envelope(at: i, of: span.frameCount, ramp: ramp)) * amplitude
+                phase += step
+                if phase > 2 * .pi { phase -= 2 * .pi }
+                guard sounding else { continue }
+                out[span.startFrame + i] =
+                    Float(sin(phase) * envelope(at: i, of: span.frameCount, ramp: ramp)) * amplitude
             }
         }
 
@@ -109,6 +117,12 @@ struct MorseRenderer {
         }
 
         return (buffer, spans)
+    }
+
+    /// The pitch an element is sounded at: its own, or the sidetone.
+    private func pitch(for span: ToneSpan, in tones: [Tone]) -> Double {
+        guard span.id < tones.count, let pitch = tones[span.id].pitch else { return frequency }
+        return Double(pitch)
     }
 
     /// Raised cosine. Continuous in value *and* slope at both edges — a linear ramp

@@ -16,18 +16,24 @@ import Foundation
 import Morse
 
 public struct Tone {
-    
-    var frequency:Float = 440
+
+    /// Pitch for this element, or nil to use the renderer's sidetone.
+    ///
+    /// This replaces a `frequency` field that every initialiser dutifully set
+    /// and the renderer then ignored — it computed one phase step for the whole
+    /// transmission. A field that nothing reads is worse than no field: it reads
+    /// like a supported feature.
+    var pitch: Float?
     var amplitude:Float = 1.0
     var duration:Double = 100
     var morse = ""
     
     var description: String {
-        "\(duration) s \(frequency) Hz \(amplitude) Am"
+        "\(duration) s \(pitch.map { "\($0) Hz" } ?? "sidetone") \(amplitude) Am"
     }
     
     /// Preferred initializer for playback: uses explicit ditTime duration for accurate timing
-    init(_ symbol: Morse.Symbols, ditTime: Double, frequency:Float = 440) {
+    init(_ symbol: Morse.Symbols, ditTime: Double, pitch: Float? = nil) {
         switch symbol {
             
         case .dit:
@@ -51,12 +57,12 @@ public struct Tone {
             self.duration = ditTime * 7
             self.amplitude = 0.0
         }
-        self.frequency = frequency
+        self.pitch = pitch
     }
     
     /// Deprecated initializer kept for compatibility. Use the timing-aware init for playback.
     init(_ symbol: Morse.Symbols,
-         frequency:Float = 440) {
+         pitch: Float? = nil) {
         switch symbol {
             
         case .dit:
@@ -80,7 +86,7 @@ public struct Tone {
             self.duration = Morse.Symbols.ditTime() * 7
             self.amplitude = 0.0
         }
-        self.frequency = frequency
+        self.pitch = pitch
     }
     
     @available(*, deprecated,
