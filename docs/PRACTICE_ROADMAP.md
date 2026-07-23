@@ -26,7 +26,54 @@ Four axes actually vary:
 
 ---
 
-## Phase 0 — the seam
+## Phase 0a — push the morse knowledge into Morse.swift
+
+`Morse.swift` exists to abstract morse, so domain knowledge belongs there rather
+than accreting in the app. Doing this first deletes app code instead of adding
+to it, and unblocks phase 1.
+
+Verified by compiling and running the package's own source, not by reading it:
+
+```
+latin(from: ".-.-.-")   → "DOT "        should be "."
+latin(from: "-....-")   → "DASH "       should be "-"
+morse(from: "a#b")      → ".-   -..."   the "#" vanishes, silently
+isTextMorse("...")      → false
+isTextLatin("hello")    → false
+```
+
+- **Punctuation decode is corrupt.** `LatinCharacters.DOT` / `.DASH` claim
+  `.-.-.-` and `-....-`, are checked before the punctuation table, and emit
+  their raw enum *names*. Any round-trip through punctuation returns letters.
+- **Both `isText*` predicates are broken.** They assign `flag` per character
+  instead of accumulating, so only the last character decides the answer. They
+  return false for valid input either way. Fix or delete — nothing uses them.
+- **`latin(from:)` appends a trailing space** per word, so a round-trip never
+  equals its input. Worth a property test: `latin(morse(x)) == x.uppercased()`.
+- **Encoding drops unknown characters with no signal.** For a trainer that's a
+  real hazard — the prompt says one thing and the audio sends another. An
+  encode that reports what it skipped lets the app delete the `promptLetters`
+  filter, which exists only to mirror this behaviour.
+- **Expose the canonical char↔morse table.** `Keyer` keeps a duplicated
+  50-entry dictionary because the package offers no lookup. That copy is a
+  second source of truth for the same facts.
+- **Prosigns as a real concept** (`<AR>`, `<SK>`, `<BT>`, `<KN>`), with a token
+  syntax the encoder understands. Right now the punctuation table shadows them:
+  `AR` is `.-.-.` which decodes as `+`, `BT` is `-...-` which decodes as `=`.
+  Phase 1c needs this.
+- **Alphabets** — letters, digits, punctuation, prosigns as addressable sets.
+  Phase 1a's character-set filters are trivial once these exist.
+- **Timing** — `Symbols.ditTime()` is a hardcoded `0.1`. PARIS and Farnsworth
+  are morse domain knowledge; moving them in lets the app drop its own
+  `Farnsworth` enum.
+
+⚠️ **The dependency tracks a branch, not a version.** `Package.resolved` pins
+`morse.swift` to `branch: main` at `78ecfb2`, so anything merged to the
+package's main flows into the app on the next resolve, with no gate. Before
+changing the package much, tag it and switch MorserX to `upToNextMajorVersion`,
+or a package edit will silently change the app underneath a session.
+
+## Phase 0b — the seam
 
 **No user-visible change.** Extract a `PracticeDrill` protocol over those four
 axes and re-express Koch as `KochDrill`. Persist settings *per mode*, so
@@ -52,9 +99,7 @@ and encodable end to end.
   predicting the shape, which uniform groups never teach.
 - **1c. QSO phrases and prosigns.** `CQ CQ DE`, `RST 599`, `QTH`, `TU 73`, AR,
   SK, BT. ⚠️ The Morse package has no prosign concept and its punctuation table
-  already claims the codes: `AR` is `.-.-.` which the package decodes as `+`, and
-  `BT` is `-...-` which it decodes as `=`. So prosigns need a small local
-  token table on our side — we are not touching the package.
+  claims the codes. Handled in phase 0a, in the package where it belongs.
 - **1d. Custom text.** Paste anything and drill against it. Trivially small, and
   it's the escape hatch that makes every missing mode less urgent.
 
@@ -126,9 +171,10 @@ approximated by any of the others.
 
 ## Suggested PR sequence
 
-1. Phase 0 — seam + stat model (no behaviour change)
-2. Phase 1 — all four generators together
-3. Phase 2 — words, then head copy
-4. Phase 3 — instant recognition (+ speed ladder)
-5. Phase 4 — straight key, then decode, then scoring, then UI
-6. Phase 5 — mixing, then pileup mode
+1. Phase 0a — Morse.swift: fixes, table, prosigns, alphabets (its own repo/PR, then tag)
+2. Phase 0b — seam + stat model (no behaviour change)
+3. Phase 1 — all four generators together
+4. Phase 2 — words, then head copy
+5. Phase 3 — instant recognition (+ speed ladder)
+6. Phase 4 — straight key, then decode, then scoring, then UI
+7. Phase 5 — mixing, then pileup mode
