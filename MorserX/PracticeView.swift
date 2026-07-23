@@ -135,6 +135,20 @@ struct PracticeView: View {
                     .font(.system(size: 12, design: .monospaced))
                     .lineLimit(2...4)
 
+            case .song:
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Melody").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(session.songFade >= 1 ? "off" : session.songFade == 0 ? "full" : "fading")
+                            .font(.caption)
+                    }
+                    Slider(value: $session.songFade, in: 0...1)
+                    Text("The tune is a way in, not a way to copy — on the air there's only one pitch. Fade it out as the letters stick.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
             case .koch, .callsigns, .qso, .words, .headCopy, .instant, .sending:
                 EmptyView()
             }
@@ -336,6 +350,9 @@ struct PracticeView: View {
 
             case .keyed:
                 straightKeyRow
+
+            case .listenOnly:
+                EmptyView()
             }
 
             HStack {
@@ -360,6 +377,7 @@ struct PracticeView: View {
             case .selfReported: return "Did you get it?"
             case .singleKey:    return "Press the character you heard"
             case .keyed:        return "Hold space (or the key below) to send · Return to mark it"
+            case .listenOnly:   return "Listening"
             }
         case .graded:    return "Return for the next round"
         }
@@ -606,8 +624,16 @@ struct PracticeView: View {
         let morse = session.promptMorse
         let dit = session.ditTime
         let spacing = session.spaceDitTime
+        let text = session.prompt
+        let isSung = session.mode == .song
+        let pitch = session.pitch(for:)
+
         Task { @MainActor in
-            await conductor.send(morse: morse, with: dit, spaceDitTime: spacing)
+            if isSung {
+                await conductor.sing(text, ditTime: dit, spaceDitTime: spacing, pitch: pitch)
+            } else {
+                await conductor.send(morse: morse, with: dit, spaceDitTime: spacing)
+            }
             await conductor.waitForSending()
             session.finishedSending()
             answerFocused = true

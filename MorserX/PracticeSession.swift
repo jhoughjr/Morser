@@ -214,6 +214,15 @@ final class PracticeSession: ObservableObject {
         didSet { store.speedLadder = speedLadder }
     }
 
+    /// How much of the alphabet song's melody to take away: 0 sings it, 1 sends
+    /// it on the plain sidetone. The crutch is meant to be removed.
+    @Published var songFade: Double = 0
+
+    /// The pitch for a character in the current drill, or nil for the sidetone.
+    func pitch(for character: Character) -> Float? {
+        mode == .song ? AlphabetSong.pitch(for: character, fade: songFade) : nil
+    }
+
     /// Consecutive clean rounds that earn one more word per minute.
     static let ladderStreak = 3
     static let maximumWPM: Double = 40
@@ -351,6 +360,11 @@ final class PracticeSession: ObservableObject {
     /// so nobody can type along with the sending.
     func finishedSending() {
         guard phase == .sending else { return }
+        // Nothing to answer: listening was the whole round.
+        guard drill.answerMethod != .listenOnly else {
+            phase = .ready
+            return
+        }
         phase = .answering
         sentAt = Date()
     }

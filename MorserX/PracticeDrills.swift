@@ -82,10 +82,13 @@ enum AnswerMethod: Sendable {
     /// You send it. Nothing is played — the prompt is on screen and the answer
     /// comes off the key.
     case keyed
+    /// Nothing to answer. Some things are learned by hearing them, not by being
+    /// tested on them.
+    case listenOnly
 }
 
 enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
-    case koch, characterSet, callsigns, qso, words, headCopy, instant, sending, custom
+    case koch, characterSet, callsigns, qso, words, headCopy, instant, sending, song, custom
 
     var id: String { rawValue }
 
@@ -99,6 +102,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .headCopy:     return "Head copy"
         case .instant:      return "Instant"
         case .sending:      return "Sending"
+        case .song:         return "ABC song"
         case .custom:       return "My text"
         }
     }
@@ -113,6 +117,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .headCopy:     return "One word, nothing to write on — did you get it?"
         case .instant:      return "One character against the clock; the metric is how fast, not just whether"
         case .sending:      return "You key it, and it marks your fist as well as your text"
+        case .song:         return "The alphabet in morse, sung to the tune you already know"
         case .custom:       return "Whatever you paste in"
         }
     }
@@ -127,6 +132,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .headCopy:     return HeadCopyDrill()
         case .instant:      return InstantDrill()
         case .sending:      return SendingDrill()
+        case .song:         return AlphabetSongDrill()
         case .custom:       return CustomTextDrill()
         }
     }
@@ -371,6 +377,27 @@ struct SendingDrill: PracticeDrill {
         // Two words: enough to need a word gap, which is the spacing most
         // beginners drop, and short enough to key without losing the thread.
         return (0..<2).compactMap { _ in context.pick(from: words) }.joined(separator: " ")
+    }
+}
+
+// MARK: - Alphabet song
+
+/// A way in, not a drill.
+///
+/// Pitch mnemonics fight copying — on the air there is one tone, so "the high
+/// short one" is a habit that has to break later. This exists to make the
+/// alphabet familiar, in an order you already know by heart, and the pitch is
+/// meant to be faded out again rather than relied on.
+struct AlphabetSongDrill: PracticeDrill {
+    let mode = PracticeMode.song
+    let answerMethod = AnswerMethod.listenOnly
+
+    func alphabet(_ context: DrillContext) -> [Character] {
+        Morse.Alphabet.letters.characters
+    }
+
+    func makePrompt(_ context: DrillContext) -> String {
+        AlphabetSong.text
     }
 }
 

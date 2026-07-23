@@ -1,6 +1,6 @@
 # Practice modes — plan
 
-**Status:** phases 0a, 0b, 1, 2, 3 and 4 are done. 0a shipped as Morse.swift v1.0.0
+**Status:** phases 0a, 0b, 1, 2, 3, 4 and 4.5 are done. 0a shipped as Morse.swift v1.0.0
 (jhoughjr/Morse.swift#1); 0b and 1 landed together, since the generators are
 nearly free once the seam exists and doing them separately means paying for the
 same context three times over. Phase 5 — pileup — is still as written below.
@@ -158,6 +158,19 @@ should be 3×" is actionable in a way that "you sent GAT instead of CAT" is not.
 **4d. UI.** Prompt shown, key it, marked, with the ratio feedback.
 
 Its own PR, minimum. 4a alone touches existing keyer behaviour.
+
+## Phase 4.5 — per-element pitch, and the alphabet song ✅ done
+
+Not in the original plan; it arrived as an idea and turned out to be the same
+groundwork phase 5 needs. Every `Tone` carried a `frequency` the renderer
+ignored — it computed one phase step for the whole transmission — so per-element
+pitch was true of the data model and false of the sound. Phase is now
+accumulated rather than derived from the frame index, because `sin(step × frame)`
+is only continuous while `step` never changes.
+
+The song itself is deliberately **not** a copy drill: pitch mnemonics fight
+copying, since on the air there is one tone and "the high short one" is a habit
+that has to break later. It's a way in, and the melody fades out on a slider.
 
 ## Phase 5 — pileup / QRM (hardest)
 
