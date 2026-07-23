@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "git@github.com:jhoughjr/Morse.swift.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "78ecfb2933487ea98616b3aaf3ac331b3eed3a87"
+        "revision" : "a4ad034988195170d84f533c3a169f02b292de72",
+        "version" : "1.0.0"
       }
     }
   ],

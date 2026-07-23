@@ -24,13 +24,13 @@ struct StripLayoutTests {
         await conductor.load(morse: morse, with: ditTime)
         try? await Task.sleep(for: .milliseconds(120))
 
-        let letters = Array(text.uppercased().filter { !$0.isWhitespace })
-        return StripLayout.build(tones: conductor.tones, letters: letters, unit: unit)
+        let labels = Morse.encode(text).tokens.map(\.text)
+        return StripLayout.build(tones: conductor.tones, labels: labels, unit: unit)
     }
 
     @Test("nothing in, nothing out")
     func empty() {
-        let model = StripLayout.build(tones: [], letters: [], unit: 9)
+        let model = StripLayout.build(tones: [], labels: [], unit: 9)
 
         #expect(model.bars.isEmpty)
         #expect(model.groups.isEmpty)
@@ -84,12 +84,12 @@ struct StripLayoutTests {
         #expect(abs(intraGap - ditWidth) < 0.001)
     }
 
-    @Test("each group carries the letter it spells, in order")
+    @Test("each group carries the label it spells, in order")
     func groupsCarryTheirLetters() async {
         let model = await layout(for: "sos")
 
         #expect(model.groups.count == 3)
-        #expect(model.groups.map(\.letter) == ["S", "O", "S"])
+        #expect(model.groups.map(\.label) == ["S", "O", "S"])
         // S is three dits, O is three dahs.
         #expect(model.groups[0].ids.count == 3)
         #expect(model.groups[1].ids.count == 3)
@@ -122,18 +122,18 @@ struct StripLayoutTests {
         #expect(breakX < secondWordStart)
     }
 
-    @Test("groups outnumbered by tones don't reach past the letters they were given")
+    @Test("groups outnumbered by tones don't reach past the labels they were given")
     func fewerLettersThanGroups() async {
         let conductor = Conductor()
         await conductor.load(morse: Morse.morse(from: "sos"), with: 0.1)
         try? await Task.sleep(for: .milliseconds(120))
 
-        let model = StripLayout.build(tones: conductor.tones, letters: ["S"], unit: 9)
+        let model = StripLayout.build(tones: conductor.tones, labels: ["S"], unit: 9)
 
         #expect(model.groups.count == 3)
-        #expect(model.groups[0].letter == "S")
-        #expect(model.groups[1].letter == nil)
-        #expect(model.groups[2].letter == nil)
+        #expect(model.groups[0].label == "S")
+        #expect(model.groups[1].label == nil)
+        #expect(model.groups[2].label == nil)
     }
 
     @Test("the scale is honest: a second of morse is pointsPerSecond wide")

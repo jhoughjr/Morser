@@ -16,41 +16,6 @@
 import Foundation
 import Morse
 
-// MARK: - Speed
-
-/// Character speed and effective speed, and the spacing that reconciles them.
-///
-/// Farnsworth timing sends each character at full speed but pads the gaps, so a
-/// beginner hears the real rhythm of a letter — which is the thing being learned —
-/// with time to write it down.
-enum Farnsworth {
-
-    /// PARIS-standard dit length for a given words-per-minute.
-    static func ditTime(wpm: Double) -> Double {
-        guard wpm > 0 else { return 0.1 }
-        return 1.2 / wpm
-    }
-
-    /// The dit length that the *spaces* are measured in, per the ARRL formula.
-    ///
-    /// At `effectiveWPM == characterWPM` this reduces exactly to `ditTime(wpm:)`,
-    /// which is the property that keeps a non-Farnsworth session honest rather
-    /// than merely close.
-    static func spaceDitTime(characterWPM c: Double, effectiveWPM s: Double) -> Double {
-        guard c > 0, s > 0 else { return ditTime(wpm: max(c, 1)) }
-        // Never send the spacing faster than the characters.
-        let effective = min(s, c)
-        let ta = (60 * c - 37.2 * effective) / (c * effective)
-        return ta / 19
-    }
-
-    /// Words per minute implied by a dit length, for labelling an existing slider.
-    static func wpm(ditTime: Double) -> Double {
-        guard ditTime > 0 else { return 0 }
-        return 1.2 / ditTime
-    }
-}
-
 // MARK: - Scoring
 
 /// How one character has fared across every round it has appeared in.
@@ -93,6 +58,9 @@ protocol PracticeStoring: AnyObject {
     var characterWPM: Double? { get set }
     var effectiveWPM: Double? { get set }
     var scores: [Character: CharacterScore] { get set }
+    var mode: String? { get set }
+    var characterSet: String? { get set }
+    var customText: String? { get set }
 }
 
 final class UserDefaultsPracticeStore: PracticeStoring {
@@ -103,6 +71,9 @@ final class UserDefaultsPracticeStore: PracticeStoring {
         static let charWPM = "practice.characterWPM"
         static let effWPM = "practice.effectiveWPM"
         static let scores = "practice.scores"
+        static let mode = "practice.mode"
+        static let characterSet = "practice.characterSet"
+        static let customText = "practice.customText"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -122,6 +93,21 @@ final class UserDefaultsPracticeStore: PracticeStoring {
     var effectiveWPM: Double? {
         get { defaults.object(forKey: Key.effWPM) as? Double }
         set { defaults.set(newValue, forKey: Key.effWPM) }
+    }
+
+    var mode: String? {
+        get { defaults.string(forKey: Key.mode) }
+        set { defaults.set(newValue, forKey: Key.mode) }
+    }
+
+    var characterSet: String? {
+        get { defaults.string(forKey: Key.characterSet) }
+        set { defaults.set(newValue, forKey: Key.characterSet) }
+    }
+
+    var customText: String? {
+        get { defaults.string(forKey: Key.customText) }
+        set { defaults.set(newValue, forKey: Key.customText) }
     }
 
     /// Stored as [character: [attempts, hits]] — plist-native, so no encoder and
@@ -149,10 +135,9 @@ final class UserDefaultsPracticeStore: PracticeStoring {
 
 final class PracticeSession: ObservableObject {
 
-    /// Koch's order: characters that are easy to confuse arrive close together,
-    /// so you're forced to hear the difference early instead of building a habit
-    /// that later has to break.
-    static let kochOrder = Array("KMRSUAPTLOWI.NJEF0Y,VG5/Q9ZH38B?427C1D6X")
+    /// The Koch ladder. It belongs to the drill that walks it; this stays for
+    /// the callers that ask the session how long the ladder is.
+    static var kochOrder: [Character] { KochDrill.order }
 
     static let minimumLevel = 2
     /// Accuracy at which the next character is unlocked. The conventional bar.
@@ -173,6 +158,39 @@ final class PracticeSession: ObservableObject {
 
     @Published var groupSize: Int = 5
     @Published var groupCount: Int = 5
+
+    @Published var mode: PracticeMode = .koch {
+        didSet {
+            guard mode != oldValue else { return }
+            store.mode = mode.rawValue
+            // A prompt built by the previous drill would be marked by the new
+            // one's rules, so the round ends with the mode.
+            prompt = ""
+            answer = ""
+            grade = nil
+            phase = .ready
+        }
+    }
+
+    @Published var characterSet: CharacterSetChoice = .letters {
+        didSet { store.characterSet = characterSet.rawValue }
+    }
+
+    @Published var customText: String = "the quick brown fox jumps over the lazy dog" {
+        didSet { store.customText = customText }
+    }
+
+    var drill: any PracticeDrill { mode.drill }
+
+    private var context: DrillContext {
+        DrillContext(level: level,
+                     scores: scores,
+                     groupSize: groupSize,
+                     groupCount: groupCount,
+                     customText: customText,
+                     characterSet: characterSet,
+                     randomIndex: randomIndex)
+    }
 
     /// This sitting only — the per-character record is what persists. Kept apart
     /// so a good run today isn't hidden by a bad week.
@@ -217,65 +235,50 @@ final class PracticeSession: ObservableObject {
         self.characterWPM = store.characterWPM ?? 18
         self.effectiveWPM = min(store.effectiveWPM ?? 10, self.characterWPM)
         self.scores = store.scores
+        self.mode = store.mode.flatMap(PracticeMode.init(rawValue:)) ?? .koch
+        self.characterSet = store.characterSet.flatMap(CharacterSetChoice.init(rawValue:)) ?? .letters
+        self.customText = store.customText ?? "the quick brown fox jumps over the lazy dog"
     }
 
     // MARK: Alphabet
 
-    /// The characters in play at the current level.
+    /// The characters in play. Empty when the drill has no fixed alphabet —
+    /// callsigns and QSO text draw on the whole mode.
     var alphabet: [Character] {
-        Array(Self.kochOrder.prefix(level))
+        drill.alphabet(context)
     }
 
-    /// The character unlocked by advancing, or nil at the top of the ladder.
+    /// The character unlocked by advancing, or nil when there's no ladder to walk.
     var nextCharacter: Character? {
-        level < Self.kochOrder.count ? Self.kochOrder[level] : nil
+        guard drill.usesLevels, level < Self.kochOrder.count else { return nil }
+        return Self.kochOrder[level]
     }
 
     // MARK: Timing
 
-    var ditTime: Double { Farnsworth.ditTime(wpm: characterWPM) }
-    var spaceDitTime: Double { Farnsworth.spaceDitTime(characterWPM: characterWPM, effectiveWPM: effectiveWPM) }
+    var ditTime: Double { Morse.Timing.ditTime(wpm: characterWPM) }
+    var spaceDitTime: Double {
+        Morse.Timing.farnsworthSpaceDitTime(characterWPM: characterWPM, effectiveWPM: effectiveWPM)
+    }
 
     // MARK: Rounds
 
-    /// How often each character should turn up, expressed as copies in a bag.
-    ///
-    /// A flat draw spends most of a round on characters you already know. The one
-    /// you just unlocked is the one you can't copy yet, so it gets the most; after
-    /// that, weight follows failure. Everything keeps at least one copy — drilling
-    /// only the weak ones would let the strong ones rot.
+    /// Exposed for the Koch drill's weighting, which is the one piece of prompt
+    /// selection worth being able to look at from outside.
     var weightedBag: [Character] {
-        let letters = alphabet
-        guard let newest = letters.last else { return [] }
-
-        return letters.flatMap { char -> [Character] in
-            var copies = 2
-            if char == newest { copies += 3 }
-            if let score = scores[char], score.attempts >= 5 {
-                copies += Int(((1 - score.accuracy) * 4).rounded())
-            }
-            return Array(repeating: char, count: copies)
-        }
+        KochDrill().weightedBag(context)
     }
 
     /// Builds a fresh prompt and clears the previous answer.
     func startRound() {
-        let letters = weightedBag
-        guard !letters.isEmpty, groupSize > 0, groupCount > 0 else {
+        let text = drill.makePrompt(context)
+        guard !text.isEmpty else {
             prompt = ""
             phase = .ready
             return
         }
 
-        prompt = (0..<groupCount)
-            .map { _ in
-                String((0..<groupSize).map { _ in
-                    let index = min(max(randomIndex(letters.count), 0), letters.count - 1)
-                    return letters[index]
-                })
-            }
-            .joined(separator: " ")
-
+        prompt = text
         answer = ""
         grade = nil
         phase = .sending
@@ -322,7 +325,7 @@ final class PracticeSession: ObservableObject {
     }
 
     var canAdvance: Bool {
-        guard phase == .graded, let grade else { return false }
+        guard drill.usesLevels, phase == .graded, let grade else { return false }
         return grade.accuracy >= Self.advanceThreshold && level < Self.kochOrder.count
     }
 
@@ -330,7 +333,7 @@ final class PracticeSession: ObservableObject {
     var newestCharacter: Character? { alphabet.last }
 
     func advance() {
-        guard level < Self.kochOrder.count else { return }
+        guard drill.usesLevels, level < Self.kochOrder.count else { return }
         level += 1
         // The streak was earned on the old alphabet; it says nothing about the new one.
         streak = 0
@@ -382,9 +385,13 @@ final class PracticeSession: ObservableObject {
         return Grade(groups: built)
     }
 
+    /// Splits into groups, and drops the angle brackets a prosign is written
+    /// with — nobody types `<AR>` under time pressure, and the brackets are
+    /// notation for us rather than something that goes over the air.
     private static func groups(in text: String) -> [[Character]] {
         text.uppercased()
             .split(whereSeparator: { $0.isWhitespace })
-            .map { Array($0) }
+            .map { Array($0.filter { $0 != "<" && $0 != ">" }) }
+            .filter { !$0.isEmpty }
     }
 }

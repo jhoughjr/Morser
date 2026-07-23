@@ -1,5 +1,10 @@
 # Practice modes — plan
 
+**Status:** phases 0a, 0b and 1 are done. 0a shipped as Morse.swift v1.0.0
+(jhoughjr/Morse.swift#1); 0b and 1 landed together, since the generators are
+nearly free once the seam exists and doing them separately means paying for the
+same context three times over. Phases 2–5 are still as written below.
+
 Ordered easiest to hardest. Cost is in PRs, not days, because the sizes differ by
 an order of magnitude and calendar estimates would be fiction.
 
@@ -26,7 +31,7 @@ Four axes actually vary:
 
 ---
 
-## Phase 0a — push the morse knowledge into Morse.swift
+## Phase 0a — push the morse knowledge into Morse.swift ✅ done (v1.0.0)
 
 `Morse.swift` exists to abstract morse, so domain knowledge belongs there rather
 than accreting in the app. Doing this first deletes app code instead of adding
@@ -67,13 +72,12 @@ isTextLatin("hello")    → false
   are morse domain knowledge; moving them in lets the app drop its own
   `Farnsworth` enum.
 
-⚠️ **The dependency tracks a branch, not a version.** `Package.resolved` pins
-`morse.swift` to `branch: main` at `78ecfb2`, so anything merged to the
-package's main flows into the app on the next resolve, with no gate. Before
-changing the package much, tag it and switch MorserX to `upToNextMajorVersion`,
-or a package edit will silently change the app underneath a session.
+~~⚠️ **The dependency tracks a branch, not a version.**~~ Fixed: the package is
+tagged `v1.0.0` and MorserX now pins `upToNextMajorVersion` from 1.0.0. It had
+been worse than "no gate" — `Package.resolved` recorded `78ecfb2` while the
+checkout being compiled was `bf5cf81`, so the pin didn't describe the build.
 
-## Phase 0b — the seam
+## Phase 0b — the seam ✅ done
 
 **No user-visible change.** Extract a `PracticeDrill` protocol over those four
 axes and re-express Koch as `KochDrill`. Persist settings *per mode*, so
@@ -87,7 +91,7 @@ migration now is cheaper than three migrations spread across the other phases.
 **Risk:** none really — it's a refactor behind passing tests. That's exactly why
 it goes first.
 
-## Phase 1 — generators (easiest; four small PRs or one)
+## Phase 1 — generators ✅ done (one PR)
 
 Each is a `makePrompt` implementation plus a test that the output is well-formed
 and encodable end to end.

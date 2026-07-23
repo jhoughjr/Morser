@@ -21,6 +21,9 @@ private final class MemoryStore: PracticeStoring {
     var characterWPM: Double?
     var effectiveWPM: Double?
     var scores: [Character: CharacterScore] = [:]
+    var mode: String?
+    var characterSet: String?
+    var customText: String?
 }
 
 @MainActor
@@ -374,50 +377,6 @@ struct PracticeScoringTests {
 
         #expect(session.scores.isEmpty)
         #expect(store.scores.isEmpty)
-    }
-}
-
-// MARK: - Timing
-
-struct FarnsworthTests {
-
-    @Test("dit length is the PARIS standard")
-    func ditFromWPM() {
-        #expect(abs(Farnsworth.ditTime(wpm: 20) - 0.06) < 1e-9)
-        #expect(abs(Farnsworth.wpm(ditTime: 0.06) - 20) < 1e-9)
-    }
-
-    @Test("with both speeds equal, spacing is just the character dit")
-    func degeneratesToPlainTiming() {
-        for wpm in [10.0, 13.0, 18.0, 25.0, 35.0] {
-            let spacing = Farnsworth.spaceDitTime(characterWPM: wpm, effectiveWPM: wpm)
-            #expect(abs(spacing - Farnsworth.ditTime(wpm: wpm)) < 1e-9,
-                    "spacing diverged at \(wpm) wpm")
-        }
-    }
-
-    @Test("a slower effective speed stretches the gaps and only the gaps")
-    func stretchesGaps() {
-        let dit = Farnsworth.ditTime(wpm: 20)
-        let spacing = Farnsworth.spaceDitTime(characterWPM: 20, effectiveWPM: 10)
-
-        #expect(spacing > dit)
-        // Characters are untouched: the dit is a function of character speed alone.
-        #expect(Farnsworth.ditTime(wpm: 20) == dit)
-    }
-
-    @Test("asking for a faster effective speed than the characters is refused")
-    func cannotOutrunCharacters() {
-        let spacing = Farnsworth.spaceDitTime(characterWPM: 15, effectiveWPM: 30)
-
-        #expect(abs(spacing - Farnsworth.ditTime(wpm: 15)) < 1e-9)
-    }
-
-    @Test("zero and negative speeds don't produce nonsense durations")
-    func degenerateInputs() {
-        #expect(Farnsworth.ditTime(wpm: 0) > 0)
-        #expect(Farnsworth.spaceDitTime(characterWPM: 0, effectiveWPM: 0) > 0)
-        #expect(Farnsworth.spaceDitTime(characterWPM: 20, effectiveWPM: 0) > 0)
     }
 }
 

@@ -42,7 +42,7 @@ enum StripLayout {
         let index: Int
         let x: CGFloat
         let width: CGFloat
-        let letter: Character?
+        let label: String?
         let ids: [Int]
     }
 
@@ -59,7 +59,7 @@ enum StripLayout {
     /// - Parameter unit: points given to one dit. Everything else is proportional,
     ///   which is what makes the picture a timing diagram rather than a row of cells.
     static func build(tones: [Conductor.SequencedTone],
-                      letters: [Character],
+                      labels: [String],
                       unit: CGFloat = 9) -> Model {
         guard !tones.isEmpty else { return Model() }
 
@@ -80,7 +80,7 @@ enum StripLayout {
             model.groups.append(Group(index: groupIndex,
                                       x: groupStart,
                                       width: end - groupStart,
-                                      letter: groupIndex < letters.count ? letters[groupIndex] : nil,
+                                      label: groupIndex < labels.count ? labels[groupIndex] : nil,
                                       ids: groupIDs))
             groupIndex += 1
             groupIDs = []
@@ -119,9 +119,9 @@ struct MorseStripView: View {
 
     let tones: [Conductor.SequencedTone]
     let currentID: Int
-    /// The source characters, in order — one per group. Decoding the morse back
-    /// would work too, but the text is right there and can't disagree with itself.
-    let letters: [Character]
+    /// What each group spells, in order — one per group. A prosign is one group
+    /// and one label, which is why these are strings rather than characters.
+    let labels: [String]
 
     @Binding var hoveredGroup: Int?
 
@@ -132,7 +132,7 @@ struct MorseStripView: View {
     static let height: CGFloat = 108
 
     var body: some View {
-        let model = StripLayout.build(tones: tones, letters: letters, unit: unit)
+        let model = StripLayout.build(tones: tones, labels: labels, unit: unit)
 
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
@@ -218,7 +218,7 @@ struct MorseStripView: View {
         ForEach(model.groups, id: \.index) { group in
             let isActive = group.ids.contains(currentID)
             let isPlayed = (group.ids.last ?? 0) < currentID
-            Text(group.letter.map(String.init) ?? "·")
+            Text(group.label ?? "·")
                 .font(.system(size: 15, weight: isActive ? .bold : .medium, design: .monospaced))
                 .foregroundStyle(isActive ? Color.green
                                  : isPlayed ? Color.white.opacity(0.3)

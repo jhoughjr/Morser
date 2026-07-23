@@ -23,13 +23,21 @@ struct Controllers {
             didSet { convertToMorse() }
         }
         @Published var morseCode: String = ""
+        /// One per character group in `morseCode`, in order.
+        @Published var tokens: [Morse.Token] = []
+        /// Characters that can't be sent. The encoder used to drop these without
+        /// a word, so the field showed text the audio never transmitted.
+        @Published var skipped: [Character] = []
 
         init() {
             convertToMorse()
         }
 
         public func convertToMorse() {
-            morseCode = Morse.morse(from: morseText)
+            let encoded = Morse.encode(morseText)
+            morseCode = encoded.morse
+            tokens = encoded.tokens
+            skipped = encoded.skipped
         }
 
         public func convertToText() {
@@ -63,10 +71,10 @@ struct Views {
     /// what is being sent *right now*, big enough to read across a room.
     struct MorseFlasherView: View {
         @ObservedObject var conductor: Conductor
-        let letters: [Character]
+        let labels: [String]
 
         var body: some View {
-            let model = StripLayout.build(tones: conductor.tones, letters: letters)
+            let model = StripLayout.build(tones: conductor.tones, labels: labels)
             let currentID = conductor.currentTone?.id ?? -1
             let group = model.groups.first { $0.ids.contains(currentID) }
 
@@ -80,7 +88,7 @@ struct Views {
                 } else {
                     VStack(spacing: 12) {
                         lamp
-                        Text(group?.letter.map(String.init) ?? " ")
+                        Text(group?.label ?? " ")
                             .font(.system(size: 64, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                             .animation(nil, value: currentID)
@@ -141,7 +149,7 @@ struct ContentView: View {
             Divider()
             inputSection
             Divider()
-            Views.MorseFlasherView(conductor: conductor, letters: promptLetters)
+            Views.MorseFlasherView(conductor: conductor, labels: promptLabels)
                 .frame(minHeight: 120, maxHeight: 180)
             Divider()
             morseScrollStrip
@@ -232,6 +240,13 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
+
+            if !morseController.skipped.isEmpty {
+                Label("Can't send \(morseController.skipped.map(String.init).joined(separator: " "))",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
         }
         .padding()
     }
@@ -241,16 +256,18 @@ struct ContentView: View {
     private var morseScrollStrip: some View {
         MorseStripView(tones: conductor.tones,
                        currentID: conductor.currentTone?.id ?? -1,
-                       letters: promptLetters,
+                       labels: promptLabels,
                        hoveredGroup: $hoveredGroup)
     }
 
-    /// The characters that actually made it into the morse, in order. The encoder
-    /// skips anything it can't send, so filtering the same way keeps the letters
-    /// under the strip aligned with the bars above them.
-    private var promptLetters: [Character] {
-        Array(morseController.morseText.uppercased()
-            .filter { !$0.isWhitespace && !Morse.morse(from: String($0)).isEmpty })
+    /// What each group under the strip spells.
+    ///
+    /// This used to re-derive the encoder's skipping rule by filtering the text
+    /// the same way, which only worked for as long as the two agreed. The encoder
+    /// now reports the tokens it actually sent, so there is nothing to keep in
+    /// step.
+    private var promptLabels: [String] {
+        morseController.tokens.map(\.text)
     }
 
     // MARK: - Controls
@@ -270,7 +287,7 @@ struct ContentView: View {
                 Spacer()
                 // Dits-per-second was labelled "bps", which is neither. Speed in
                 // morse is words per minute against the standard word PARIS.
-                Text("\(Int(Farnsworth.wpm(ditTime: timingController.ditTime).rounded())) wpm")
+                Text("\(Int(Morse.Timing.wpm(ditTime: timingController.ditTime).rounded())) wpm")
                     .fontWeight(.medium)
             }
             .font(.caption2)
