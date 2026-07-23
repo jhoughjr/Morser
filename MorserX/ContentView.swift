@@ -184,6 +184,7 @@ struct ContentView: View {
     @State private var scrollPosition: Int? = 0
     @State private var isShowingSettings = false
     @State private var isShowingKeyer = false
+    @State private var isShowingPractice = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -223,6 +224,23 @@ struct ContentView: View {
             Text("MorserX")
                 .font(.headline)
             Spacer()
+            Button {
+                isShowingPractice = true
+            } label: {
+                Image(systemName: "graduationcap")
+                    .imageScale(.medium)
+            }
+            .buttonStyle(.plain)
+            .help("Practice copying")
+            .sheet(isPresented: $isShowingPractice) {
+                // Practice borrows the audio engine but not the strip; still, a
+                // half-finished send leaves the engine stopped mid-sequence.
+                Task { await conductor.load(morse: morseController.morseCode,
+                                            with: timingController.ditTime) }
+            } content: {
+                PracticeView(conductor: conductor)
+            }
+
             Button {
                 isShowingKeyer = true
             } label: {
@@ -311,6 +329,10 @@ struct ContentView: View {
         return (sx, endX - sx)
     }
 
+    /// Breathing room for the active cell's shadow, which reaches ~11pt past the
+    /// cell (radius 9 on the glyph, 6 on the plate).
+    private let glowInset: CGFloat = 12
+
     private var morseScrollStrip: some View {
         let minDur = conductor.tones.map(\.tone.duration).min() ?? 0.01
         let groups = wordGroups(from: conductor.tones)
@@ -334,6 +356,11 @@ struct ContentView: View {
                             .allowsHitTesting(false)
                     }
                 }
+                // The active cell's glow is drawn outside its 64pt frame, and the
+                // scroll view clips at its bounds — without this the highlight was
+                // sheared flat top and bottom. Applied after the overlay so the
+                // word label keeps aligning to the cells rather than to the padding.
+                .padding(.vertical, glowInset)
 
                 if !conductor.tones.isEmpty {
                     timeRulerView(
@@ -345,7 +372,7 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(height: 96)
+        .frame(height: 96 + glowInset * 2)
         .background(.background.secondary)
         .scrollPosition(id: $scrollPosition)
     }
@@ -507,7 +534,9 @@ struct ContentView: View {
             HStack {
                 Text("Dit: \(timingController.ditTime, specifier: "%.3f") s")
                 Spacer()
-                Text("\(Int((1.0 / timingController.ditTime).rounded())) bps")
+                // Dits-per-second was labelled "bps", which is neither. Speed in
+                // morse is words per minute against the standard word PARIS.
+                Text("\(Int(Farnsworth.wpm(ditTime: timingController.ditTime).rounded())) wpm")
                     .fontWeight(.medium)
             }
             .font(.caption2)
