@@ -69,8 +69,23 @@ enum CharacterSetChoice: String, CaseIterable, Identifiable, Sendable {
 
 // MARK: - Drill
 
+/// How a round is answered. The drill decides, because it's the drill that
+/// knows whether writing the answer down is part of the skill or in the way of it.
+enum AnswerMethod: Sendable {
+    /// Type what you heard, then Return.
+    case typed
+    /// Say whether you got it. Head copy is ruined by a text field — the point
+    /// is to stop writing.
+    case selfReported
+    /// One key, no Return. Anything slower than a reflex isn't recognition.
+    case singleKey
+    /// You send it. Nothing is played — the prompt is on screen and the answer
+    /// comes off the key.
+    case keyed
+}
+
 enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
-    case koch, characterSet, callsigns, qso, custom
+    case koch, characterSet, callsigns, qso, words, headCopy, instant, sending, custom
 
     var id: String { rawValue }
 
@@ -80,6 +95,10 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .characterSet: return "Character set"
         case .callsigns:    return "Callsigns"
         case .qso:          return "QSO"
+        case .words:        return "Words"
+        case .headCopy:     return "Head copy"
+        case .instant:      return "Instant"
+        case .sending:      return "Sending"
         case .custom:       return "My text"
         }
     }
@@ -90,6 +109,10 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .characterSet: return "Groups drawn from one part of the mode"
         case .callsigns:    return "Prefix, digit, suffix — the shape real calls have"
         case .qso:          return "What actually goes over the air, prosigns included"
+        case .words:        return "Whole words, heard as one shape rather than spelled out"
+        case .headCopy:     return "One word, nothing to write on — did you get it?"
+        case .instant:      return "One character against the clock; the metric is how fast, not just whether"
+        case .sending:      return "You key it, and it marks your fist as well as your text"
         case .custom:       return "Whatever you paste in"
         }
     }
@@ -100,6 +123,10 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .characterSet: return CharacterSetDrill()
         case .callsigns:    return CallsignDrill()
         case .qso:          return QSODrill()
+        case .words:        return WordsDrill()
+        case .headCopy:     return HeadCopyDrill()
+        case .instant:      return InstantDrill()
+        case .sending:      return SendingDrill()
         case .custom:       return CustomTextDrill()
         }
     }
@@ -109,6 +136,12 @@ protocol PracticeDrill {
     var mode: PracticeMode { get }
     /// Whether the Koch ladder (level, unlock, next character) applies.
     var usesLevels: Bool { get }
+    var answerMethod: AnswerMethod { get }
+    /// Seconds allowed to answer, or nil for no clock.
+    var answerDeadline: TimeInterval? { get }
+    /// Whether how *long* the answer took is worth recording. It only means
+    /// something when the prompt is short enough to answer by reflex.
+    var measuresLatency: Bool { get }
     /// The characters in play, for display. Empty when the idea doesn't apply.
     func alphabet(_ context: DrillContext) -> [Character]
     /// The text to send, as space-separated groups.
@@ -117,6 +150,9 @@ protocol PracticeDrill {
 
 extension PracticeDrill {
     var usesLevels: Bool { false }
+    var answerMethod: AnswerMethod { .typed }
+    var answerDeadline: TimeInterval? { nil }
+    var measuresLatency: Bool { false }
     func alphabet(_ context: DrillContext) -> [Character] { [] }
 }
 
@@ -252,6 +288,89 @@ struct CustomTextDrill: PracticeDrill {
 
         let start = min(context.randomIndex(words.count - wanted + 1), words.count - wanted)
         return words[start..<(start + wanted)].joined(separator: " ")
+    }
+}
+
+// MARK: - Words
+
+/// Whole words, so `THE` becomes one shape instead of three letters.
+///
+/// This is the bridge to head copy: you cannot hold a word in your head until
+/// you stop hearing it as a spelling.
+struct WordsDrill: PracticeDrill {
+    let mode = PracticeMode.words
+
+    /// Mostly plain English, with enough on-air vocabulary that the words you'll
+    /// meet most often on the air turn up here too.
+    static func vocabulary(_ context: DrillContext) -> [String] {
+        CommonWords.english + CommonWords.radio
+    }
+
+    func makePrompt(_ context: DrillContext) -> String {
+        let words = Self.vocabulary(context)
+        return (0..<max(context.groupCount, 1))
+            .compactMap { _ in context.pick(from: words) }
+            .joined(separator: " ")
+    }
+}
+
+// MARK: - Head copy
+
+/// One word, no text field, and then you say whether you got it.
+///
+/// Writing while you listen is the habit that caps most people around 20 wpm,
+/// and it can't be unlearned while there's somewhere to write.
+struct HeadCopyDrill: PracticeDrill {
+    let mode = PracticeMode.headCopy
+    let answerMethod = AnswerMethod.selfReported
+
+    func makePrompt(_ context: DrillContext) -> String {
+        let words = WordsDrill.vocabulary(context)
+        // One word. Two would be a memory test rather than a copying one.
+        return context.pick(from: words) ?? "the"
+    }
+}
+
+// MARK: - Instant recognition
+
+/// One character against the clock.
+///
+/// The metric here is latency, not accuracy: at speed, "right after two seconds
+/// of thinking" is a miss, and a drill that only counts correctness would call
+/// it a pass and tell you nothing.
+struct InstantDrill: PracticeDrill {
+    let mode = PracticeMode.instant
+    let usesLevels = true
+    let answerMethod = AnswerMethod.singleKey
+    let measuresLatency = true
+    var answerDeadline: TimeInterval? { 3 }
+
+    func alphabet(_ context: DrillContext) -> [Character] {
+        KochDrill().alphabet(context)
+    }
+
+    func makePrompt(_ context: DrillContext) -> String {
+        guard let character = context.pick(from: KochDrill().weightedBag(context)) else { return "" }
+        return String(character)
+    }
+}
+
+// MARK: - Sending
+
+/// The other direction: you send, and it reads you back.
+///
+/// Almost no trainer marks your fist, which is the half you can't self-assess —
+/// you can hear that you sent GAT for CAT, but not that your dahs are twice your
+/// dits rather than three times, because to you they sound like dahs.
+struct SendingDrill: PracticeDrill {
+    let mode = PracticeMode.sending
+    let answerMethod = AnswerMethod.keyed
+
+    func makePrompt(_ context: DrillContext) -> String {
+        let words = WordsDrill.vocabulary(context)
+        // Two words: enough to need a word gap, which is the spacing most
+        // beginners drop, and short enough to key without losing the thread.
+        return (0..<2).compactMap { _ in context.pick(from: words) }.joined(separator: " ")
     }
 }
 

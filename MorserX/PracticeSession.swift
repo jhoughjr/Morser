@@ -22,8 +22,18 @@ import Morse
 struct CharacterScore: Equatable {
     var attempts: Int = 0
     var hits: Int = 0
+    /// Total time taken to answer, summed over the rounds that timed it. Only
+    /// drills with a short enough prompt to answer by reflex record this.
+    var latencyMillis: Int = 0
+    var latencySamples: Int = 0
 
     var accuracy: Double { attempts == 0 ? 0 : Double(hits) / Double(attempts) }
+
+    /// Seconds, or nil when this character has never been timed.
+    var averageLatency: Double? {
+        guard latencySamples > 0 else { return nil }
+        return Double(latencyMillis) / Double(latencySamples) / 1000
+    }
 }
 
 /// The result of comparing what was sent with what was heard.
@@ -61,6 +71,7 @@ protocol PracticeStoring: AnyObject {
     var mode: String? { get set }
     var characterSet: String? { get set }
     var customText: String? { get set }
+    var speedLadder: Bool? { get set }
 }
 
 final class UserDefaultsPracticeStore: PracticeStoring {
@@ -74,6 +85,7 @@ final class UserDefaultsPracticeStore: PracticeStoring {
         static let mode = "practice.mode"
         static let characterSet = "practice.characterSet"
         static let customText = "practice.customText"
+        static let speedLadder = "practice.speedLadder"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -110,21 +122,34 @@ final class UserDefaultsPracticeStore: PracticeStoring {
         set { defaults.set(newValue, forKey: Key.customText) }
     }
 
-    /// Stored as [character: [attempts, hits]] — plist-native, so no encoder and
-    /// no migration the first time the shape changes.
+    var speedLadder: Bool? {
+        get { defaults.object(forKey: Key.speedLadder) as? Bool }
+        set { defaults.set(newValue, forKey: Key.speedLadder) }
+    }
+
+    /// Stored as [character: [attempts, hits, latencyMillis, latencySamples]] —
+    /// plist-native, so no encoder.
+    ///
+    /// Rows written before latency existed have two elements and are read as
+    /// untimed rather than discarded; nobody should lose their record to a new
+    /// column.
     var scores: [Character: CharacterScore] {
         get {
             guard let raw = defaults.dictionary(forKey: Key.scores) as? [String: [Int]] else { return [:] }
             var result: [Character: CharacterScore] = [:]
-            for (key, pair) in raw {
-                guard let char = key.first, pair.count == 2 else { continue }
-                result[char] = CharacterScore(attempts: pair[0], hits: pair[1])
+            for (key, row) in raw {
+                guard let char = key.first, row.count >= 2 else { continue }
+                result[char] = CharacterScore(attempts: row[0],
+                                              hits: row[1],
+                                              latencyMillis: row.count > 2 ? row[2] : 0,
+                                              latencySamples: row.count > 3 ? row[3] : 0)
             }
             return result
         }
         set {
             let raw = newValue.reduce(into: [String: [Int]]()) { acc, entry in
-                acc[String(entry.key)] = [entry.value.attempts, entry.value.hits]
+                acc[String(entry.key)] = [entry.value.attempts, entry.value.hits,
+                                          entry.value.latencyMillis, entry.value.latencySamples]
             }
             defaults.set(raw, forKey: Key.scores)
         }
@@ -154,6 +179,8 @@ final class PracticeSession: ObservableObject {
     @Published private(set) var prompt: String = ""
     @Published var answer: String = ""
     @Published private(set) var grade: Grade?
+    /// How well-formed the sending was, for drills you key rather than copy.
+    @Published private(set) var fistReport: FistReport?
     @Published private(set) var scores: [Character: CharacterScore] = [:]
 
     @Published var groupSize: Int = 5
@@ -179,6 +206,25 @@ final class PracticeSession: ObservableObject {
     @Published var customText: String = "the quick brown fox jumps over the lazy dog" {
         didSet { store.customText = customText }
     }
+
+    /// Raise the character speed automatically once you can hold the pace.
+    /// Deciding when to speed up is exactly the judgement a learner doesn't have
+    /// yet, and the usual failure is leaving it too low for months.
+    @Published var speedLadder: Bool = false {
+        didSet { store.speedLadder = speedLadder }
+    }
+
+    /// Consecutive clean rounds that earn one more word per minute.
+    static let ladderStreak = 3
+    static let maximumWPM: Double = 40
+
+    /// When the sending finished, for drills that time the answer.
+    private var sentAt: Date?
+    /// The most recent answer time, in seconds.
+    @Published private(set) var lastLatency: Double?
+
+    var answerMethod: AnswerMethod { drill.answerMethod }
+    var answerDeadline: TimeInterval? { drill.answerDeadline }
 
     var drill: any PracticeDrill { mode.drill }
 
@@ -238,6 +284,7 @@ final class PracticeSession: ObservableObject {
         self.mode = store.mode.flatMap(PracticeMode.init(rawValue:)) ?? .koch
         self.characterSet = store.characterSet.flatMap(CharacterSetChoice.init(rawValue:)) ?? .letters
         self.customText = store.customText ?? "the quick brown fox jumps over the lazy dog"
+        self.speedLadder = store.speedLadder ?? false
     }
 
     // MARK: Alphabet
@@ -281,7 +328,20 @@ final class PracticeSession: ObservableObject {
         prompt = text
         answer = ""
         grade = nil
-        phase = .sending
+        fistReport = nil
+
+        // Nothing is played for a drill you send: the prompt is on screen and
+        // the round starts the moment it appears.
+        phase = drill.answerMethod == .keyed ? .answering : .sending
+        if phase == .answering { sentAt = Date() }
+    }
+
+    /// Grades a keyed round by reading the timings back.
+    @discardableResult
+    func submitKeyed(presses: [Press]) -> Grade {
+        fistReport = FistReport.measure(presses)
+        answer = FistDecoder.decode(presses).text
+        return submit()
     }
 
     /// The prompt as morse, ready for the conductor.
@@ -292,6 +352,7 @@ final class PracticeSession: ObservableObject {
     func finishedSending() {
         guard phase == .sending else { return }
         phase = .answering
+        sentAt = Date()
     }
 
     /// Sends the same prompt again — the copy so far is kept.
@@ -301,17 +362,30 @@ final class PracticeSession: ObservableObject {
     }
 
     /// Grades `answer` against `prompt` and folds the result into the running scores.
+    /// Grades the round.
+    /// - Parameter selfReported: for head copy, where there is nothing to compare
+    ///   against but your own answer. `nil` grades the typed copy.
     @discardableResult
-    func submit() -> Grade {
-        let result = Self.grade(prompt: prompt, answer: answer)
+    func submit(selfReported: Bool? = nil) -> Grade {
+        let result = selfReported.map { Self.selfReportedGrade(prompt: prompt, copied: $0) }
+            ?? Self.grade(prompt: prompt, answer: answer)
         grade = result
         phase = .graded
+
+        let latency = sentAt.map { Date().timeIntervalSince($0) }
+        lastLatency = drill.measuresLatency ? latency : nil
+        sentAt = nil
 
         for cell in result.cells {
             guard let expected = cell.expected else { continue }
             var score = scores[expected] ?? CharacterScore()
             score.attempts += 1
             if cell.isHit { score.hits += 1 }
+            // Only time a hit. How long it took to get it wrong isn't a speed.
+            if let latency, drill.measuresLatency, cell.isHit {
+                score.latencyMillis += Int(latency * 1000)
+                score.latencySamples += 1
+            }
             scores[expected] = score
         }
         store.scores = scores
@@ -320,6 +394,12 @@ final class PracticeSession: ObservableObject {
         sessionHits += result.hits
         sessionTotal += result.total
         streak = result.accuracy >= Self.advanceThreshold ? streak + 1 : 0
+
+        if speedLadder, streak >= Self.ladderStreak, characterWPM < Self.maximumWPM {
+            characterWPM = min(characterWPM + 1, Self.maximumWPM)
+            // The streak was earned at the old speed and says nothing about the new one.
+            streak = 0
+        }
 
         return result
     }
@@ -388,6 +468,17 @@ final class PracticeSession: ObservableObject {
     /// Splits into groups, and drops the angle brackets a prosign is written
     /// with — nobody types `<AR>` under time pressure, and the brackets are
     /// notation for us rather than something that goes over the air.
+    /// A grade from a yes or no.
+    ///
+    /// Head copy has nothing to compare against, so the whole prompt stands or
+    /// falls together — which is honest: hearing four letters of a five-letter
+    /// word is not having copied it.
+    static func selfReportedGrade(prompt: String, copied: Bool) -> Grade {
+        Grade(groups: groups(in: prompt).map { group in
+            group.map { Grade.Cell(expected: $0, heard: copied ? $0 : nil) }
+        })
+    }
+
     private static func groups(in text: String) -> [[Character]] {
         text.uppercased()
             .split(whereSeparator: { $0.isWhitespace })

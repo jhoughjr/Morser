@@ -24,6 +24,7 @@ private final class MemoryStore: PracticeStoring {
     var mode: String?
     var characterSet: String?
     var customText: String?
+    var speedLadder: Bool?
 }
 
 @MainActor

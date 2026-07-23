@@ -1,9 +1,9 @@
 # Practice modes — plan
 
-**Status:** phases 0a, 0b and 1 are done. 0a shipped as Morse.swift v1.0.0
+**Status:** phases 0a, 0b, 1, 2, 3 and 4 are done. 0a shipped as Morse.swift v1.0.0
 (jhoughjr/Morse.swift#1); 0b and 1 landed together, since the generators are
 nearly free once the seam exists and doing them separately means paying for the
-same context three times over. Phases 2–5 are still as written below.
+same context three times over. Phase 5 — pileup — is still as written below.
 
 Ordered easiest to hardest. Cost is in PRs, not days, because the sizes differ by
 an order of magnitude and calendar estimates would be fiction.
@@ -107,7 +107,7 @@ and encodable end to end.
 - **1d. Custom text.** Paste anything and drill against it. Trivially small, and
   it's the escape hatch that makes every missing mode less urgent.
 
-## Phase 2 — words and head copy
+## Phase 2 — words and head copy ✅ done
 
 - **2a. Plain words.** A word list instead of random groups, so `THE` is heard as
   one shape rather than three letters. This is the bridge to head copy.
@@ -120,7 +120,7 @@ and encodable end to end.
   20 wpm. Needs the "how you answer" axis from phase 0 to be real, and scores
   words rather than characters.
 
-## Phase 3 — instant recognition
+## Phase 3 — instant recognition ✅ done (with the speed ladder)
 
 One character, answer before a deadline. **The metric is latency, not accuracy** —
 at speed, "correct after two seconds of thinking" is a miss, and nothing we
@@ -134,7 +134,7 @@ per-character latency in the stat model (phase 0 pays for itself here).
 character speed goes up on its own instead of you deciding. Small, and it depends
 only on stats that already exist.
 
-## Phase 4 — send practice
+## Phase 4 — send practice ✅ done
 
 The valuable one, and the one where this app is unusual: it already owns a keyer
 and an audio engine, and almost no trainer marks your *fist*.

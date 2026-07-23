@@ -53,9 +53,12 @@ struct EveryDrillTests {
         #expect(!encoded.morse.isEmpty)
     }
 
-    @Test("only Koch walks a ladder", arguments: PracticeMode.allCases)
-    func levelsBelongToKoch(mode: PracticeMode) {
-        #expect(mode.drill.usesLevels == (mode == .koch))
+    /// The ladder belongs to the drills that draw from the Koch alphabet.
+    /// Instant recognition does; callsigns and QSO text draw on the whole mode,
+    /// so there's nothing there to unlock.
+    @Test("levels apply only where there's a ladder to walk", arguments: PracticeMode.allCases)
+    func levelsBelongToKochAndInstant(mode: PracticeMode) {
+        #expect(mode.drill.usesLevels == (mode == .koch || mode == .instant))
     }
 
     @Test("a prompt is made of groups, never one run-on string", arguments: PracticeMode.allCases)
@@ -280,6 +283,7 @@ struct DrillSessionTests {
         var mode: String?
         var characterSet: String?
         var customText: String?
+        var speedLadder: Bool?
     }
 
     @Test("switching drills ends the round rather than marking it by new rules")
