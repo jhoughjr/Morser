@@ -32,6 +32,13 @@ struct DrillContext {
         guard !items.isEmpty else { return nil }
         return items[min(max(randomIndex(items.count), 0), items.count - 1)]
     }
+
+    /// A copy with the group count changed, for drawing one item at a time.
+    func withGroupCount(_ count: Int) -> DrillContext {
+        var copy = self
+        copy.groupCount = count
+        return copy
+    }
 }
 
 /// The character groups a set-filter drill can work from.
@@ -88,7 +95,7 @@ enum AnswerMethod: Sendable {
 }
 
 enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
-    case koch, characterSet, callsigns, qso, words, headCopy, instant, sending, song, custom
+    case koch, characterSet, callsigns, qso, words, headCopy, instant, sending, song, pileup, custom
 
     var id: String { rawValue }
 
@@ -103,6 +110,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .instant:      return "Instant"
         case .sending:      return "Sending"
         case .song:         return "ABC song"
+        case .pileup:       return "Pileup"
         case .custom:       return "My text"
         }
     }
@@ -118,6 +126,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .instant:      return "One character against the clock; the metric is how fast, not just whether"
         case .sending:      return "You key it, and it marks your fist as well as your text"
         case .song:         return "The alphabet in morse, sung to the tune you already know"
+        case .pileup:       return "Several stations at once — pull the wanted one out of the crowd"
         case .custom:       return "Whatever you paste in"
         }
     }
@@ -133,6 +142,7 @@ enum PracticeMode: String, CaseIterable, Identifiable, Sendable {
         case .instant:      return InstantDrill()
         case .sending:      return SendingDrill()
         case .song:         return AlphabetSongDrill()
+        case .pileup:       return PileupDrill()
         case .custom:       return CustomTextDrill()
         }
     }
@@ -377,6 +387,32 @@ struct SendingDrill: PracticeDrill {
         // Two words: enough to need a word gap, which is the spacing most
         // beginners drop, and short enough to key without losing the thread.
         return (0..<2).compactMap { _ in context.pick(from: words) }.joined(separator: " ")
+    }
+}
+
+// MARK: - Pileup
+
+/// Several stations calling at once, and you copy the one you're told to.
+///
+/// The prompt is the wanted callsign — that's what you're graded on — but the
+/// audio is the whole crowd. The drill only decides who's calling and how many;
+/// the mixing and the pitches live in `Pileup`, and the sending in the conductor.
+struct PileupDrill: PracticeDrill {
+    let mode = PracticeMode.pileup
+
+    /// How many stations call at once. More is harder; three is a real run.
+    var stationCount = 3
+
+    func makePrompt(_ context: DrillContext) -> String {
+        pileup(context).wanted.callsign
+    }
+
+    /// The crowd for this round. Built here so the view can send it and the
+    /// prompt can name its wanted station, from the same draw.
+    func pileup(_ context: DrillContext) -> Pileup {
+        Pileup.make(count: stationCount, context: context) { context in
+            CallsignDrill().makePrompt(context.withGroupCount(1))
+        }
     }
 }
 

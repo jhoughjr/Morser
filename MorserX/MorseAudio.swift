@@ -119,6 +119,75 @@ struct MorseRenderer {
         return (buffer, spans)
     }
 
+    /// One transmission in a mix: its tones, where it starts, and how loud.
+    struct Voice {
+        let tones: [Tone]
+        /// When this voice begins, in seconds from the start of the mix.
+        var startSeconds: Double = 0
+        /// Relative loudness. The wanted signal in a pileup sits above the rest.
+        var gain: Float = 1
+    }
+
+    /// Renders several transmissions at once and sums them — the pileup.
+    ///
+    /// Each voice is rendered on its own (so it keeps its own pitch and timing),
+    /// laid down at its frame offset, and added in. The sum is then scaled so its
+    /// peak just reaches full scale: three signals summing to 1.05 would clip, and
+    /// a clip is a much louder artefact than the crowding the drill is about.
+    /// Scaling the whole mix by one factor keeps the voices' relative loudness,
+    /// which is the cue you copy by.
+    func renderMix(_ voices: [Voice], format: AVAudioFormat) -> (buffer: AVAudioPCMBuffer, frames: Int)? {
+        let rendered: [(samples: [Float], offset: Int, gain: Float)] = voices.compactMap { voice in
+            guard let (buffer, spans) = render(voice.tones, format: format),
+                  let channel = buffer.floatChannelData?[0],
+                  let total = spans.last?.endFrame, total > 0 else { return nil }
+            return (Array(UnsafeBufferPointer(start: channel, count: total)),
+                    Int((voice.startSeconds * sampleRate).rounded()),
+                    voice.gain)
+        }
+        guard !rendered.isEmpty else { return nil }
+
+        let mixed = Self.mix(rendered)
+        guard !mixed.isEmpty,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(mixed.count)),
+              let out = buffer.floatChannelData
+        else { return nil }
+
+        buffer.frameLength = AVAudioFrameCount(mixed.count)
+        mixed.withUnsafeBufferPointer { source in
+            out[0].update(from: source.baseAddress!, count: mixed.count)
+            for channel in 1..<Int(format.channelCount) {
+                out[channel].update(from: source.baseAddress!, count: mixed.count)
+            }
+        }
+        return (buffer, mixed.count)
+    }
+
+    /// Sums placed, gained signals and normalises the peak to full scale.
+    ///
+    /// Pure and array-based so the mixing itself is testable without an engine —
+    /// which matters, because clipping and off-by-one placement are exactly the
+    /// faults that would still sound roughly right.
+    static func mix(_ signals: [(samples: [Float], offset: Int, gain: Float)]) -> [Float] {
+        let length = signals.map { $0.offset + $0.samples.count }.max() ?? 0
+        guard length > 0 else { return [] }
+
+        var out = [Float](repeating: 0, count: length)
+        for signal in signals {
+            let gain = signal.gain
+            for (i, sample) in signal.samples.enumerated() {
+                out[signal.offset + i] += sample * gain
+            }
+        }
+
+        let peak = out.reduce(Float(0)) { max($0, abs($1)) }
+        if peak > 1 {
+            let scale = 1 / peak
+            for i in out.indices { out[i] *= scale }
+        }
+        return out
+    }
+
     /// The pitch an element is sounded at: its own, or the sidetone.
     private func pitch(for span: ToneSpan, in tones: [Tone]) -> Double {
         guard span.id < tones.count, let pitch = tones[span.id].pitch else { return frequency }
