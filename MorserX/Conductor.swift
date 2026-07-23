@@ -239,6 +239,78 @@ actor Conductor: ObservableObject {
         }
     }
 
+    /// Sounds `morse` without loading it into the sequencer.
+    ///
+    /// Practice needs the audio and nothing else: putting the prompt in the strip
+    /// would answer the question it is asking. The published state this touches is
+    /// `isPlaying` only, so the strip keeps showing whatever text was there.
+    /// - Parameter spaceDitTime: unit length for the *gaps*, when it differs from
+    ///   the characters' — Farnsworth spacing.
+    public func send(morse: String,
+                     with ditTime: Double,
+                     spaceDitTime: Double? = nil) {
+        stop()
+
+        let input = morse.trimmingCharacters(in: .whitespacesAndNewlines)
+        var tones = cleanedTones(for: assembledTones(for: input, ditTime: ditTime))
+        if let spacing = spaceDitTime {
+            tones = farnsworthed(tones, spaceDitTime: spacing)
+        }
+
+        let spans = player.play(tones: tones)
+        guard let last = spans.last else { return }
+
+        Task { @MainActor in self.isPlaying = true }
+        playbackTask = Task { [weak self] in
+            await self?.followSilently(untilFrame: last.endFrame)
+        }
+    }
+
+    /// Suspends until whatever is currently sounding has finished.
+    public func waitForSending() async {
+        await playbackTask?.value
+    }
+
+    /// Stretches only the inter-character and inter-word gaps.
+    ///
+    /// The characters keep their real rhythm, which is the whole point of
+    /// Farnsworth timing — slowing the dits themselves would teach a rhythm that
+    /// doesn't exist at speed.
+    func farnsworthed(_ tones: [Tone], spaceDitTime: Double) -> [Tone] {
+        tones.map { tone in
+            switch tone.morse {
+            case Morse.Symbols.letterSpace.rawValue: return Tone(.letterSpace, ditTime: spaceDitTime)
+            case Morse.Symbols.wordSpace.rawValue:   return Tone(.wordSpace, ditTime: spaceDitTime)
+            default:                                 return tone
+            }
+        }
+    }
+
+    /// Follows the clock just far enough to know when the sending has finished.
+    private func followSilently(untilFrame total: Int) async {
+        var ticksWaitingForFirstFrame = 0
+        let bootstrapLimit = 500   // ~2s at 4ms
+
+        while !Task.isCancelled {
+            guard let frame = player.currentFrame else {
+                ticksWaitingForFirstFrame += 1
+                if ticksWaitingForFirstFrame > bootstrapLimit { break }
+                try? await Task.sleep(for: .milliseconds(4))
+                continue
+            }
+            ticksWaitingForFirstFrame = 0
+            if frame >= total { break }
+            try? await Task.sleep(for: .milliseconds(8))
+        }
+
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+            self.isPlaying = false
+            self.isSounding = false
+        }
+        playbackTask = nil
+    }
+
     /// Top level API to turn morse strings into played tones.
     /// - Parameter morse: The morse code string to play.
     /// - Parameter ditTime: The unit duration (in seconds) for a "dit". This parameter is now fully respected for all playback unit durations.

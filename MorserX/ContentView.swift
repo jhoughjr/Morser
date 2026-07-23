@@ -54,12 +54,22 @@ struct Views {
         }
     }
 
+    /// The lamp.
+    ///
+    /// This panel used to be a second copy of the strip, drawn as a row of small
+    /// glyphs in a large dark field — mostly empty space with a few marks in it,
+    /// which is the worst of both: too sparse to read as a picture, too small to
+    /// read as text. It now does the one thing the strip can't, which is tell you
+    /// what is being sent *right now*, big enough to read across a room.
     struct MorseFlasherView: View {
         @ObservedObject var conductor: Conductor
-
-        private let baseWidth: CGFloat = 28
+        let letters: [Character]
 
         var body: some View {
+            let model = StripLayout.build(tones: conductor.tones, letters: letters)
+            let currentID = conductor.currentTone?.id ?? -1
+            let group = model.groups.first { $0.ids.contains(currentID) }
+
             ZStack {
                 Color(white: 0.08)
 
@@ -68,108 +78,48 @@ struct Views {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 } else {
-                    let minDur = conductor.tones.map(\.tone.duration).min() ?? 0.01
-                    let currentID = conductor.currentTone?.id ?? -1
-
-                    GeometryReader { geo in
-                        let halfW = geo.size.width / 2
-                        ScrollViewReader { proxy in
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 4) {
-                                    Color.clear.frame(width: halfW, height: 1)
-                                    ForEach(conductor.tones, id: \.id) { t in
-                                        flasherCell(t, minDuration: minDur, currentID: currentID)
-                                    }
-                                    Color.clear.frame(width: halfW, height: 1)
-                                }
-                            }
-                            .onChange(of: conductor.currentTone?.id) { _, id in
-                                if let id {
-                                    withAnimation(.easeInOut(duration: 0.12)) {
-                                        proxy.scrollTo(id, anchor: .center)
-                                    }
-                                }
-                            }
-                        }
+                    VStack(spacing: 12) {
+                        lamp
+                        Text(group?.letter.map(String.init) ?? " ")
+                            .font(.system(size: 64, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .animation(nil, value: currentID)
+                        symbolRow(for: group, currentID: currentID)
                     }
                 }
             }
         }
 
-        @ViewBuilder
-        private func flasherCell(_ t: Conductor.SequencedTone, minDuration: Double, currentID: Int) -> some View {
-            let isActive   = t.id == currentID
-            let isPlayed   = t.id < currentID
-            let isSounding = t.tone.amplitude > 0
-            let isInfra    = t.tone.morse == Morse.Symbols.infraSpace.rawValue
-            let cellWidth  = max(baseWidth, baseWidth * CGFloat(t.tone.duration / minDuration))
-
-            ZStack {
-                // Active bloom
-                if isActive && isSounding {
-                    Color.red
-                        .blur(radius: 40)
-                        .opacity(0.45)
-                        .allowsHitTesting(false)
-                }
-
-                if isSounding {
-                    Text(t.tone.morse)
-                        .font(.system(size: isActive ? 44 : 26, weight: .bold, design: .monospaced))
-                        .foregroundStyle(
-                            isActive  ? Color.white :
-                            isPlayed  ? Color.primary.opacity(0.25) :
-                                        Color.primary.opacity(0.55)
-                        )
-                        .shadow(color: isActive ? .white.opacity(0.9)  : .clear, radius: 3)
-                        .shadow(color: isActive ? .red.opacity(0.8)    : .clear, radius: 10)
-                        .shadow(color: isActive ? .red.opacity(0.4)    : .clear, radius: 24)
-                        .animation(.easeInOut(duration: 0.04), value: isActive)
-                } else if isInfra {
-                    Rectangle()
-                        .fill(
-                            isActive  ? Color.white.opacity(0.8) :
-                            isPlayed  ? Color.primary.opacity(0.08) :
-                                        Color.primary.opacity(0.18)
-                        )
-                        .frame(width: 1.5)
-                        .padding(.vertical, 20)
-                } else {
-                    // Letter / word space badge
-                    flasherSpaceLabel(for: t, isActive: isActive, isPlayed: isPlayed)
-                }
-            }
-            .frame(width: cellWidth, height: 80)
-            .id(t.id)
+        /// Lit while the key is down, so the rhythm is visible as well as audible.
+        private var lamp: some View {
+            Circle()
+                .fill(conductor.isSounding ? Color.green : Color.white.opacity(0.10))
+                .frame(width: 22, height: 22)
+                .shadow(color: conductor.isSounding ? .green.opacity(0.9) : .clear, radius: 12)
+                .shadow(color: conductor.isSounding ? .green.opacity(0.5) : .clear, radius: 28)
+                .animation(.easeOut(duration: 0.05), value: conductor.isSounding)
         }
 
+        /// The character's own symbols, with the one being sounded picked out —
+        /// which is where you are inside the letter, not just which letter it is.
         @ViewBuilder
-        private func flasherSpaceLabel(for t: Conductor.SequencedTone, isActive: Bool, isPlayed: Bool) -> some View {
-            let opacity: Double = isActive ? 1.0 : isPlayed ? 0.2 : 0.5
-            if t.tone.morse == Morse.Symbols.wordSpace.rawValue {
-                Text("W")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isActive ? Color.white : Color.blue)
-                    .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 3)
-                        .fill(isActive ? Color.red.opacity(0.4) : Color.blue.opacity(0.15)))
-                    .opacity(opacity)
-            } else if t.tone.morse == Morse.Symbols.letterSpace.rawValue {
-                Text("L")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isActive ? Color.white : Color.red)
-                    .padding(.horizontal, 4).padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 3)
-                        .fill(isActive ? Color.red.opacity(0.4) : Color.red.opacity(0.12)))
-                    .opacity(opacity)
+        private func symbolRow(for group: StripLayout.Group?, currentID: Int) -> some View {
+            if let group {
+                HStack(spacing: 8) {
+                    ForEach(group.ids, id: \.self) { id in
+                        let tone = conductor.tones.first { $0.id == id }?.tone
+                        let isDah = tone?.morse == Morse.Symbols.dah.rawValue
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(id == currentID ? Color.green : Color.white.opacity(0.35))
+                            .frame(width: isDah ? 30 : 10, height: 8)
+                    }
+                }
+                .frame(height: 10)
+            } else {
+                Color.clear.frame(height: 10)
             }
         }
     }
-}
-
-class HoverWatcher: ObservableObject {
-    @Published var hoveredTone: Conductor.SequencedTone? = nil
-    @Published var hoveredWordID: Int? = nil
 }
 
 struct ContentView: View {
@@ -179,11 +129,11 @@ struct ContentView: View {
     @StateObject private var morseController = Controllers.MorseController()
     @StateObject private var conductor = Conductor()
     @StateObject private var timingController = Controllers.TimingController()
-    @StateObject private var hoverWatcher = HoverWatcher()
 
-    @State private var scrollPosition: Int? = 0
+    @State private var hoveredGroup: Int?
     @State private var isShowingSettings = false
     @State private var isShowingKeyer = false
+    @State private var isShowingPractice = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -191,11 +141,8 @@ struct ContentView: View {
             Divider()
             inputSection
             Divider()
-            Views.MorseFlasherView(conductor: conductor)
+            Views.MorseFlasherView(conductor: conductor, letters: promptLetters)
                 .frame(minHeight: 120, maxHeight: 180)
-                .onChange(of: conductor.currentTone) { _, _ in
-                    scrollPosition = scrollPosition == nil ? 0 : (scrollPosition! + 1)
-                }
             Divider()
             morseScrollStrip
             Divider()
@@ -208,7 +155,6 @@ struct ContentView: View {
                                  with: timingController.ditTime)
         }
         .onChange(of: morseController.morseCode) { _, code in
-            scrollPosition = 0
             Task { await conductor.load(morse: code, with: timingController.ditTime) }
         }
         .onChange(of: timingController.ditTime) { _, newValue in
@@ -223,6 +169,23 @@ struct ContentView: View {
             Text("MorserX")
                 .font(.headline)
             Spacer()
+            Button {
+                isShowingPractice = true
+            } label: {
+                Image(systemName: "graduationcap")
+                    .imageScale(.medium)
+            }
+            .buttonStyle(.plain)
+            .help("Practice copying")
+            .sheet(isPresented: $isShowingPractice) {
+                // Practice borrows the audio engine but not the strip; still, a
+                // half-finished send leaves the engine stopped mid-sequence.
+                Task { await conductor.load(morse: morseController.morseCode,
+                                            with: timingController.ditTime) }
+            } content: {
+                PracticeView(conductor: conductor)
+            }
+
             Button {
                 isShowingKeyer = true
             } label: {
@@ -273,223 +236,21 @@ struct ContentView: View {
         .padding()
     }
 
-    // MARK: - Morse scroll strip
-
-    private func wordGroups(from tones: [Conductor.SequencedTone]) -> [Int: Int] {
-        var result: [Int: Int] = [:]
-        var wordID = 0
-        for t in tones {
-            if t.tone.morse == Morse.Symbols.wordSpace.rawValue {
-                wordID += 1
-            } else {
-                result[t.id] = wordID
-            }
-        }
-        return result
-    }
-
-    private var wordLatinText: [Int: String] {
-        let words = morseController.morseText.components(separatedBy: " ").filter { !$0.isEmpty }
-        return Dictionary(uniqueKeysWithValues: words.enumerated().map { ($0.offset, $0.element) })
-    }
-
-    private func wordBounds(wordID: Int, tones: [Conductor.SequencedTone], groups: [Int: Int], minDuration: Double) -> (xOffset: CGFloat, width: CGFloat) {
-        let baseW: CGFloat = 16
-        let spacing: CGFloat = 3
-        var x: CGFloat = 0
-        var startX: CGFloat? = nil
-        var endX: CGFloat = 0
-        for t in tones {
-            let w = max(baseW, baseW * CGFloat(t.tone.duration / minDuration))
-            if groups[t.id] == wordID {
-                if startX == nil { startX = x }
-                endX = x + w
-            }
-            x += w + spacing
-        }
-        guard let sx = startX else { return (0, 0) }
-        return (sx, endX - sx)
-    }
+    // MARK: - Morse strip
 
     private var morseScrollStrip: some View {
-        let minDur = conductor.tones.map(\.tone.duration).min() ?? 0.01
-        let groups = wordGroups(from: conductor.tones)
-        return ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 3) {
-                    ForEach(conductor.tones, id: \.id) { t in
-                        toneCellView(t, minDuration: minDur, wordGroupID: groups[t.id])
-                    }
-                }
-                .padding(.horizontal)
-                .overlay(alignment: .topLeading) {
-                    if let hoveredID = hoverWatcher.hoveredWordID,
-                       let latinWord = wordLatinText[hoveredID] {
-                        let b = wordBounds(wordID: hoveredID, tones: conductor.tones, groups: groups, minDuration: minDur)
-                        Text(latinWord)
-                            .font(.system(size: 26, weight: .heavy))
-                            .foregroundStyle(Color.white.opacity(0.48))
-                            .frame(width: b.width, height: 64, alignment: .center)
-                            .offset(x: 16 + b.xOffset)
-                            .allowsHitTesting(false)
-                    }
-                }
-
-                if !conductor.tones.isEmpty {
-                    timeRulerView(
-                        tones: conductor.tones,
-                        minDuration: minDur,
-                        currentID: conductor.currentTone?.id ?? -1
-                    )
-                    .padding(.horizontal)
-                }
-            }
-        }
-        .frame(height: 96)
-        .background(.background.secondary)
-        .scrollPosition(id: $scrollPosition)
+        MorseStripView(tones: conductor.tones,
+                       currentID: conductor.currentTone?.id ?? -1,
+                       letters: promptLetters,
+                       hoveredGroup: $hoveredGroup)
     }
 
-    private func timeRulerView(tones: [Conductor.SequencedTone], minDuration: Double, currentID: Int) -> some View {
-        let baseW: CGFloat = 16
-        let spacing: CGFloat = 3
-
-        var totalWidth: CGFloat = 0
-        for (i, t) in tones.enumerated() {
-            totalWidth += max(baseW, baseW * CGFloat(t.tone.duration / minDuration))
-            if i < tones.count - 1 { totalWidth += spacing }
-        }
-
-        var currentX: CGFloat = -1
-        var cx: CGFloat = 0
-        for t in tones {
-            let w = max(baseW, baseW * CGFloat(t.tone.duration / minDuration))
-            if t.id == currentID { currentX = cx + w / 2; break }
-            cx += w + spacing
-        }
-
-        return Canvas { ctx, size in
-            ctx.stroke(Path { p in
-                p.move(to: .init(x: 0, y: 0))
-                p.addLine(to: .init(x: size.width, y: 0))
-            }, with: .color(.primary.opacity(0.45)), lineWidth: 0.5)
-
-            if currentX >= 0 {
-                ctx.stroke(Path { p in
-                    p.move(to: .init(x: currentX, y: 0))
-                    p.addLine(to: .init(x: currentX, y: size.height))
-                }, with: .color(.green.opacity(0.9)), lineWidth: 1.5)
-            }
-
-            var xPos: CGFloat = 0
-            var tick = 0
-            while xPos <= totalWidth {
-                let major = tick % 5 == 0
-                ctx.stroke(Path { p in
-                    p.move(to: .init(x: xPos, y: 0))
-                    p.addLine(to: .init(x: xPos, y: major ? 7 : 3.5))
-                }, with: .color(.primary.opacity(major ? 0.75 : 0.35)), lineWidth: major ? 1 : 0.5)
-
-                if major && tick > 0 {
-                    let t = minDuration * Double(tick)
-                    let label = t >= 1 ? String(format: "%.1fs", t) : String(format: "%dms", Int(t * 1000))
-                    ctx.draw(
-                        Text(label).font(.system(size: 7, weight: .medium, design: .monospaced)).foregroundStyle(Color.primary.opacity(0.75)),
-                        at: .init(x: xPos, y: 13)
-                    )
-                }
-                xPos += baseW
-                tick += 1
-            }
-        }
-        .frame(width: totalWidth, height: 18)
-    }
-
-    private func toneCellView(_ t: Conductor.SequencedTone, minDuration: Double, wordGroupID: Int?) -> some View {
-        let isActive    = conductor.currentTone?.id == t.id
-        let isSounding  = t.tone.amplitude > 0
-        let isInfra     = t.tone.morse == Morse.Symbols.infraSpace.rawValue
-        let isWordHover = wordGroupID != nil && hoverWatcher.hoveredWordID == wordGroupID
-        let cellWidth   = max(16, 16.0 * CGFloat(t.tone.duration / minDuration))
-
-        let tooltip: String = {
-            if isInfra { return "Intra-character space · 1 dit" }
-            if t.tone.morse == Morse.Symbols.letterSpace.rawValue { return "Letter space · 3 dits" }
-            if t.tone.morse == Morse.Symbols.wordSpace.rawValue   { return "Word space · 7 dits" }
-            return ""
-        }()
-
-        return ZStack {
-            // Word-hover background (behind active highlight)
-            if isWordHover {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.blue.opacity(0.12))
-            }
-
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isActive ? Color.green.opacity(0.12) : Color.clear)
-                .shadow(color: isActive ? .green.opacity(0.7) : .clear, radius: 6)
-
-            if isSounding {
-                VStack(spacing: 1) {
-                    if hoverWatcher.hoveredTone?.id == t.id {
-                        Text(t.tone.duration, format: .number.precision(.fractionLength(3)))
-                            .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(t.tone.morse)
-                        .font(.system(size: 21, weight: .bold, design: .monospaced))
-                        .foregroundStyle(isActive ? Color.green : Color.primary)
-                        .shadow(color: isActive ? .green.opacity(0.95) : .clear, radius: 3)
-                        .shadow(color: isActive ? .green.opacity(0.55) : .clear, radius: 9)
-                }
-            } else if isInfra {
-                Rectangle()
-                    .fill(isActive ? Color.green.opacity(0.7) : Color.primary.opacity(0.18))
-                    .frame(width: 1.5)
-                    .padding(.vertical, 16)
-            } else {
-                VStack(spacing: 2) {
-                    if hoverWatcher.hoveredTone?.id == t.id {
-                        Text(t.tone.duration, format: .number.precision(.fractionLength(3)))
-                            .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
-                    }
-                    spaceLabel(for: t, isActive: isActive)
-                }
-            }
-        }
-        .frame(width: cellWidth, height: 64)
-        .help(tooltip)
-        .onContinuousHover { phase in
-            switch phase {
-            case .active:
-                hoverWatcher.hoveredTone = t
-                hoverWatcher.hoveredWordID = wordGroupID
-            case .ended:
-                hoverWatcher.hoveredTone = nil
-                hoverWatcher.hoveredWordID = nil
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func spaceLabel(for t: Conductor.SequencedTone, isActive: Bool) -> some View {
-        if t.tone.morse == Morse.Symbols.wordSpace.rawValue {
-            Text("W")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(isActive ? .green : .blue)
-                .padding(.horizontal, 4).padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 3)
-                    .fill(isActive ? Color.green.opacity(0.2) : Color.blue.opacity(0.15)))
-        } else if t.tone.morse == Morse.Symbols.letterSpace.rawValue {
-            Text("L")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(isActive ? .green : .red)
-                .padding(.horizontal, 4).padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 3)
-                    .fill(isActive ? Color.green.opacity(0.2) : Color.red.opacity(0.15)))
-        }
+    /// The characters that actually made it into the morse, in order. The encoder
+    /// skips anything it can't send, so filtering the same way keeps the letters
+    /// under the strip aligned with the bars above them.
+    private var promptLetters: [Character] {
+        Array(morseController.morseText.uppercased()
+            .filter { !$0.isWhitespace && !Morse.morse(from: String($0)).isEmpty })
     }
 
     // MARK: - Controls
@@ -507,7 +268,9 @@ struct ContentView: View {
             HStack {
                 Text("Dit: \(timingController.ditTime, specifier: "%.3f") s")
                 Spacer()
-                Text("\(Int((1.0 / timingController.ditTime).rounded())) bps")
+                // Dits-per-second was labelled "bps", which is neither. Speed in
+                // morse is words per minute against the standard word PARIS.
+                Text("\(Int(Farnsworth.wpm(ditTime: timingController.ditTime).rounded())) wpm")
                     .fontWeight(.medium)
             }
             .font(.caption2)
@@ -517,7 +280,6 @@ struct ContentView: View {
                 if conductor.isPlaying {
                     Task { await conductor.stop() }
                 } else {
-                    scrollPosition = 0
                     Task {
                         await conductor.sound(morse: morseController.morseCode,
                                               with: timingController.ditTime)
