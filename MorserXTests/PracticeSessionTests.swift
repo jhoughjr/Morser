@@ -240,6 +240,82 @@ struct PracticeScoringTests {
         #expect(session.canAdvance == false)
     }
 
+    @Test("the newest character is drilled harder than the settled ones")
+    func newestIsWeighted() {
+        let session = makeSession()
+        session.level = 6                       // K M R S U A — A is newest
+
+        let bag = session.weightedBag
+        let newest = bag.filter { $0 == "A" }.count
+        let oldest = bag.filter { $0 == "K" }.count
+
+        #expect(newest > oldest)
+        // Nothing is dropped: drilling only the weak ones would let the rest rot.
+        #expect(Set(bag) == Set(session.alphabet))
+    }
+
+    @Test("a character you keep missing turns up more often")
+    func weakCharactersAreWeighted() {
+        let store = MemoryStore()
+        store.level = 6
+        store.scores = [
+            "K": CharacterScore(attempts: 20, hits: 4),    // badly wrong
+            "M": CharacterScore(attempts: 20, hits: 20)    // solid
+        ]
+        let session = makeSession(store: store)
+
+        let bag = session.weightedBag
+        #expect(bag.filter { $0 == "K" }.count > bag.filter { $0 == "M" }.count)
+    }
+
+    @Test("a character with barely any history isn't reweighted on noise")
+    func weightingWaitsForEvidence() {
+        let store = MemoryStore()
+        store.level = 6
+        store.scores = ["K": CharacterScore(attempts: 2, hits: 0)]
+        let session = makeSession(store: store)
+
+        let bag = session.weightedBag
+        #expect(bag.filter { $0 == "K" }.count == bag.filter { $0 == "M" }.count)
+    }
+
+    @Test("session totals and the streak track the rounds actually taken")
+    func sessionStats() {
+        let session = makeSession(picks: [0])
+        session.groupCount = 1
+        session.groupSize = 10
+
+        session.startRound()
+        session.answer = session.prompt          // clean
+        session.submit()
+        #expect(session.streak == 1)
+        #expect(session.sessionAccuracy == 1.0)
+
+        session.startRound()
+        session.answer = ""                      // nothing copied
+        session.submit()
+        #expect(session.streak == 0)
+        #expect(session.roundsThisSession == 2)
+        #expect(session.sessionTotal == 20)
+        #expect(session.sessionHits == 10)
+        #expect(session.sessionAccuracy == 0.5)
+    }
+
+    @Test("unlocking a character clears the streak it was not earned on")
+    func advancingResetsStreak() {
+        let session = makeSession(picks: [0])
+        session.groupCount = 1
+        session.groupSize = 4
+
+        session.startRound()
+        session.answer = session.prompt
+        session.submit()
+        #expect(session.streak == 1)
+
+        session.advance()
+        #expect(session.streak == 0)
+    }
+
     @Test("weakest lists only characters actually heard, worst first")
     func weakestOrdering() {
         let store = MemoryStore()

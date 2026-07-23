@@ -174,6 +174,18 @@ final class PracticeSession: ObservableObject {
     @Published var groupSize: Int = 5
     @Published var groupCount: Int = 5
 
+    /// This sitting only — the per-character record is what persists. Kept apart
+    /// so a good run today isn't hidden by a bad week.
+    @Published private(set) var roundsThisSession = 0
+    @Published private(set) var sessionHits = 0
+    @Published private(set) var sessionTotal = 0
+    /// Consecutive rounds at or above the threshold.
+    @Published private(set) var streak = 0
+
+    var sessionAccuracy: Double {
+        sessionTotal == 0 ? 0 : Double(sessionHits) / Double(sessionTotal)
+    }
+
     @Published var level: Int = PracticeSession.minimumLevel {
         didSet {
             let clamped = min(max(level, Self.minimumLevel), Self.kochOrder.count)
@@ -226,9 +238,29 @@ final class PracticeSession: ObservableObject {
 
     // MARK: Rounds
 
+    /// How often each character should turn up, expressed as copies in a bag.
+    ///
+    /// A flat draw spends most of a round on characters you already know. The one
+    /// you just unlocked is the one you can't copy yet, so it gets the most; after
+    /// that, weight follows failure. Everything keeps at least one copy — drilling
+    /// only the weak ones would let the strong ones rot.
+    var weightedBag: [Character] {
+        let letters = alphabet
+        guard let newest = letters.last else { return [] }
+
+        return letters.flatMap { char -> [Character] in
+            var copies = 2
+            if char == newest { copies += 3 }
+            if let score = scores[char], score.attempts >= 5 {
+                copies += Int(((1 - score.accuracy) * 4).rounded())
+            }
+            return Array(repeating: char, count: copies)
+        }
+    }
+
     /// Builds a fresh prompt and clears the previous answer.
     func startRound() {
-        let letters = alphabet
+        let letters = weightedBag
         guard !letters.isEmpty, groupSize > 0, groupCount > 0 else {
             prompt = ""
             phase = .ready
@@ -281,6 +313,11 @@ final class PracticeSession: ObservableObject {
         }
         store.scores = scores
 
+        roundsThisSession += 1
+        sessionHits += result.hits
+        sessionTotal += result.total
+        streak = result.accuracy >= Self.advanceThreshold ? streak + 1 : 0
+
         return result
     }
 
@@ -289,9 +326,14 @@ final class PracticeSession: ObservableObject {
         return grade.accuracy >= Self.advanceThreshold && level < Self.kochOrder.count
     }
 
+    /// The most recently unlocked character — the one still being learned.
+    var newestCharacter: Character? { alphabet.last }
+
     func advance() {
         guard level < Self.kochOrder.count else { return }
         level += 1
+        // The streak was earned on the old alphabet; it says nothing about the new one.
+        streak = 0
     }
 
     func retreat() {

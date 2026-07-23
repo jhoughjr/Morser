@@ -180,53 +180,110 @@ struct PracticeView: View {
             sectionHeading("Copy", systemImage: "ear.badge.waveform", tint: .blue)
 
             HStack(spacing: 10) {
-                Button {
-                    startRound()
-                } label: {
-                    Label(session.phase == .ready ? "Send" : "New round", systemImage: "play.fill")
+                // Only one of these exists at a time, so Return can belong to
+                // whichever step you're actually on.
+                switch session.phase {
+                case .ready, .graded:
+                    Button {
+                        startRound()
+                    } label: {
+                        Label(session.phase == .ready ? "Send" : "Next round", systemImage: "play.fill")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+
+                case .sending:
+                    Label("Sending — listen", systemImage: "waveform")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 7)
+
+                case .answering:
+                    Button {
+                        submit()
+                    } label: {
+                        Label("Check", systemImage: "checkmark")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(session.answer.isEmpty)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(session.phase == .sending)
 
                 Button {
                     replay()
                 } label: {
                     Label("Replay", systemImage: "arrow.counterclockwise")
                 }
+                .keyboardShortcut("r", modifiers: .command)
                 .disabled(session.prompt.isEmpty || session.phase == .sending)
 
-                Stepper("\(session.groupCount)×\(session.groupSize)", value: $session.groupCount, in: 1...10)
-                    .font(.caption)
-                    .fixedSize()
-            }
+                Stepper(value: $session.groupCount, in: 1...10) {
+                    Text("\(session.groupCount) groups").font(.caption)
+                }
+                .fixedSize()
 
-            if session.phase == .sending {
-                Label("Sending — listen", systemImage: "waveform")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                Stepper(value: $session.groupSize, in: 1...7) {
+                    Text("of \(session.groupSize)").font(.caption)
+                }
+                .fixedSize()
             }
 
             TextField("Type what you hear…", text: $session.answer)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.title3, design: .monospaced))
-                .textCase(.uppercase)
                 .disabled(session.phase == .sending || session.phase == .ready)
                 .focused($answerFocused)
-                .onSubmit { session.submit() }
+                .onSubmit { submit() }
 
-            if session.phase == .answering {
-                Text("Return to check")
+            HStack {
+                Text(hint)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                Spacer()
+                if session.roundsThisSession > 0 {
+                    sessionSummary
+                }
             }
         }
+    }
+
+    private var hint: String {
+        switch session.phase {
+        case .ready:     return "Return to send · ⌘R to replay"
+        case .sending:   return "…"
+        case .answering: return "Return to check"
+        case .graded:    return "Return for the next round"
+        }
+    }
+
+    private var sessionSummary: some View {
+        HStack(spacing: 10) {
+            Label("\(session.roundsThisSession)", systemImage: "number")
+            Label("\(Int((session.sessionAccuracy * 100).rounded()))%", systemImage: "target")
+            if session.streak > 1 {
+                Label("\(session.streak)", systemImage: "flame.fill")
+                    .foregroundStyle(.orange)
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .labelStyle(.titleAndIcon)
+        .help("Rounds this session · running accuracy · consecutive clean rounds")
     }
 
     private func startRound() {
         session.startRound()
         play()
+    }
+
+    private func submit() {
+        guard session.phase == .answering, !session.answer.isEmpty else { return }
+        session.submit()
+        answerFocused = false
     }
 
     private func replay() {
@@ -271,7 +328,18 @@ struct PracticeView: View {
                         Label("Add \(String(next))", systemImage: "plus.circle.fill")
                     }
                     .buttonStyle(.borderedProminent)
+                } else if let next = session.nextCharacter {
+                    Text("\(Int(PracticeSession.advanceThreshold * 100))% unlocks \(String(next))")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
+            }
+
+            // The marked grid says the same thing, but seeing the two strings on
+            // top of each other is how you spot a whole group heard one late.
+            VStack(alignment: .leading, spacing: 2) {
+                revealLine("sent", session.prompt, .secondary)
+                revealLine("you", session.answer.uppercased(), .primary)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -286,6 +354,19 @@ struct PracticeView: View {
                 }
                 .padding(.vertical, 4)
             }
+        }
+    }
+
+    private func revealLine(_ label: String, _ text: String, _ tint: HierarchicalShapeStyle) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(width: 28, alignment: .trailing)
+            Text(text.isEmpty ? "—" : text)
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(tint)
+                .textSelection(.enabled)
         }
     }
 
