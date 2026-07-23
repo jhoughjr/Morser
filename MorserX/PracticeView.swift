@@ -18,6 +18,10 @@ struct PracticeView: View {
     @FocusState private var answerFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
+    @State private var deadlineElapsed: Double = 0
+    @State private var keyMonitor: Any?
+    @State private var deadlineTask: Task<Void, Never>?
+
     init(conductor: Conductor, session: PracticeSession = PracticeSession()) {
         self.conductor = conductor
         _session = StateObject(wrappedValue: session)
@@ -49,7 +53,11 @@ struct PracticeView: View {
             }
         }
         .frame(minWidth: 520, minHeight: 560)
+        .onChange(of: session.phase) { _, phase in
+            phase == .answering ? beginAnswering() : endAnswering()
+        }
         .onDisappear {
+            endAnswering()
             Task { await conductor.stop() }
         }
     }
@@ -121,7 +129,7 @@ struct PracticeView: View {
                     .font(.system(size: 12, design: .monospaced))
                     .lineLimit(2...4)
 
-            case .koch, .callsigns, .qso:
+            case .koch, .callsigns, .qso, .words, .headCopy, .instant:
                 EmptyView()
             }
         }
@@ -214,6 +222,13 @@ struct PracticeView: View {
             Text("Characters are sent at full speed; the gaps between them carry the difference.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+
+            Toggle(isOn: $session.speedLadder) {
+                Text("Speed up after \(PracticeSession.ladderStreak) clean rounds")
+                    .font(.caption)
+            }
+            .toggleStyle(.checkbox)
+            .help("Knowing when to push the speed is the judgement a learner hasn't got yet")
         }
     }
 
@@ -246,15 +261,23 @@ struct PracticeView: View {
                         .padding(.vertical, 7)
 
                 case .answering:
-                    Button {
-                        submit()
-                    } label: {
-                        Label("Check", systemImage: "checkmark")
+                    if session.answerMethod == .typed {
+                        Button {
+                            submit()
+                        } label: {
+                            Label("Check", systemImage: "checkmark")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(session.answer.isEmpty)
+                    } else {
+                        Label("Answer", systemImage: "questionmark.circle")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 7)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(session.answer.isEmpty)
                 }
 
                 Button {
@@ -276,12 +299,21 @@ struct PracticeView: View {
                 .fixedSize()
             }
 
-            TextField("Type what you hear…", text: $session.answer)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(.title3, design: .monospaced))
-                .disabled(session.phase == .sending || session.phase == .ready)
-                .focused($answerFocused)
-                .onSubmit { submit() }
+            switch session.answerMethod {
+            case .typed:
+                TextField("Type what you hear…", text: $session.answer)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.title3, design: .monospaced))
+                    .disabled(session.phase == .sending || session.phase == .ready)
+                    .focused($answerFocused)
+                    .onSubmit { submit() }
+
+            case .selfReported:
+                selfReportRow
+
+            case .singleKey:
+                singleKeyRow
+            }
 
             HStack {
                 Text(hint)
@@ -299,8 +331,64 @@ struct PracticeView: View {
         switch session.phase {
         case .ready:     return "Return to send · ⌘R to replay"
         case .sending:   return "…"
-        case .answering: return "Return to check"
+        case .answering:
+            switch session.answerMethod {
+            case .typed:        return "Return to check"
+            case .selfReported: return "Did you get it?"
+            case .singleKey:    return "Press the character you heard"
+            }
         case .graded:    return "Return for the next round"
+        }
+    }
+
+    // MARK: - Head copy
+
+    /// No text field on purpose. Somewhere to write is the thing head copy is
+    /// trying to take away.
+    private var selfReportRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                session.submit(selfReported: true)
+                answerFocused = false
+            } label: {
+                Label("Got it", systemImage: "checkmark.circle.fill")
+                    .frame(maxWidth: .infinity).padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .keyboardShortcut("j", modifiers: [])
+
+            Button {
+                session.submit(selfReported: false)
+                answerFocused = false
+            } label: {
+                Label("Missed it", systemImage: "xmark.circle.fill")
+                    .frame(maxWidth: .infinity).padding(.vertical, 6)
+            }
+            .buttonStyle(.bordered)
+            .keyboardShortcut("f", modifiers: [])
+        }
+        .disabled(session.phase != .answering)
+        .opacity(session.phase == .answering ? 1 : 0.35)
+    }
+
+    // MARK: - Instant recognition
+
+    private var singleKeyRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if session.phase == .answering, let deadline = session.answerDeadline {
+                // A bar rather than a number: you should be listening and
+                // reacting, not reading a countdown.
+                ProgressView(value: deadlineElapsed, total: deadline)
+                    .tint(.orange)
+                    .animation(.linear(duration: deadline), value: deadlineElapsed)
+            } else {
+                ProgressView(value: 0, total: 1).tint(.clear)
+            }
+
+            Text(session.phase == .answering ? "One key — no Return" : " ")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -312,6 +400,9 @@ struct PracticeView: View {
                 Label("\(session.streak)", systemImage: "flame.fill")
                     .foregroundStyle(.orange)
             }
+            if let latency = session.lastLatency {
+                Label(String(format: "%.2fs", latency), systemImage: "stopwatch")
+            }
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
@@ -322,6 +413,47 @@ struct PracticeView: View {
     private func startRound() {
         session.startRound()
         play()
+    }
+
+    // MARK: - Answering
+
+    private func beginAnswering() {
+        guard session.answerMethod == .singleKey else { return }
+
+        // One key, no Return: a text field would put an edit-and-confirm step in
+        // front of what is supposed to be a reflex.
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard !event.isARepeat,
+                  let character = event.charactersIgnoringModifiers?.first,
+                  character.isLetter || character.isNumber || character.isPunctuation
+            else { return event }
+
+            session.answer = String(character)
+            session.submit()
+            return nil     // swallowed, so it can't also land in some other control
+        }
+
+        if let deadline = session.answerDeadline {
+            deadlineElapsed = 0
+            DispatchQueue.main.async { deadlineElapsed = deadline }
+            deadlineTask = Task {
+                try? await Task.sleep(for: .seconds(deadline))
+                guard !Task.isCancelled, session.phase == .answering else { return }
+                // Out of time is a miss. Right-after-thinking-about-it isn't
+                // recognition, and scoring it as a hit would hide the only thing
+                // this drill measures.
+                session.answer = ""
+                session.submit()
+            }
+        }
+    }
+
+    private func endAnswering() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        deadlineTask?.cancel()
+        deadlineTask = nil
+        deadlineElapsed = 0
     }
 
     private func submit() {
@@ -383,7 +515,9 @@ struct PracticeView: View {
             // top of each other is how you spot a whole group heard one late.
             VStack(alignment: .leading, spacing: 2) {
                 revealLine("sent", session.prompt, .secondary)
-                revealLine("you", session.answer.uppercased(), .primary)
+                if session.answerMethod == .typed {
+                    revealLine("you", session.answer.uppercased(), .primary)
+                }
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
