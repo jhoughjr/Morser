@@ -84,6 +84,7 @@ struct PracticeView: View {
             Spacer()
             Button("Done") { dismiss() }
                 .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("practiceDone")
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -117,6 +118,7 @@ struct PracticeView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .accessibilityIdentifier("modePicker")
 
             switch session.mode {
             case .characterSet:

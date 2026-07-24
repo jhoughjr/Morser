@@ -88,12 +88,5 @@ public struct Tone {
         }
         self.pitch = pitch
     }
-    
-    @available(*, deprecated,
-                renamed: "init(symbol:duration:)",
-                message: "Use this instead") init(duration: Double, amp: Float = 1.0) {
-        self.duration = duration
-        self.amplitude = amp
-    }
 }
 

@@ -163,11 +163,6 @@ public final class Player: ObservableObject {
 
     // MARK: - Diagnostics
 
-    func setManualRenderingBufferSize(bytes: UInt32) {
-        // Buffer size is negotiated with the device; retained so the diagnostics
-        // panel keeps building. Timing no longer depends on it.
-    }
-
     /// Sweeps ditTime and reports rendered vs. ideal duration.
     ///
     /// This used to play the tones and stopwatch them, which measured the scheduler
