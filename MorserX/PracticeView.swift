@@ -149,7 +149,7 @@ struct PracticeView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-            case .koch, .callsigns, .qso, .words, .headCopy, .instant, .sending:
+            case .koch, .callsigns, .qso, .words, .headCopy, .instant, .sending, .pileup:
                 EmptyView()
             }
         }
@@ -628,8 +628,11 @@ struct PracticeView: View {
         let isSung = session.mode == .song
         let pitch = session.pitch(for:)
 
+        let pileup = session.pileup
         Task { @MainActor in
-            if isSung {
+            if let pileup {
+                await conductor.playPileup(pileup, ditTime: dit)
+            } else if isSung {
                 await conductor.sing(text, ditTime: dit, spaceDitTime: spacing, pitch: pitch)
             } else {
                 await conductor.send(morse: morse, with: dit, spaceDitTime: spacing)

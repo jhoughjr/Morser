@@ -314,6 +314,28 @@ actor Conductor: ObservableObject {
         }
     }
 
+    /// Sounds several stations at once — the pileup — without loading the strip.
+    public func playPileup(_ pileup: Pileup, ditTime: Double) {
+        stop()
+
+        let voices = pileup.stations.map { station in
+            MorseRenderer.Voice(
+                tones: pitchedTones(for: station.callsign, ditTime: ditTime) { _ in station.pitch },
+                startSeconds: station.startSeconds,
+                gain: station.gain
+            )
+        }
+
+        guard let (buffer, frames) = player.renderer.renderMix(voices, format: player.renderFormat),
+              frames > 0 else { return }
+        player.schedule(buffer: buffer, frames: frames)
+
+        Task { @MainActor in self.isPlaying = true }
+        playbackTask = Task { [weak self] in
+            await self?.followSilently(untilFrame: frames)
+        }
+    }
+
     /// Suspends until whatever is currently sounding has finished.
     public func waitForSending() async {
         await playbackTask?.value

@@ -1,9 +1,9 @@
 # Practice modes — plan
 
-**Status:** phases 0a, 0b, 1, 2, 3, 4 and 4.5 are done. 0a shipped as Morse.swift v1.0.0
+**Status:** all phases are done — 0a, 0b, 1, 2, 3, 4, 4.5 and 5. 0a shipped as Morse.swift v1.0.0
 (jhoughjr/Morse.swift#1); 0b and 1 landed together, since the generators are
 nearly free once the seam exists and doing them separately means paying for the
-same context three times over. Phase 5 — pileup — is still as written below.
+same context three times over. Nothing outstanding.
 
 Ordered easiest to hardest. Cost is in PRs, not days, because the sizes differ by
 an order of magnitude and calendar estimates would be fiction.
@@ -172,7 +172,7 @@ The song itself is deliberately **not** a copy drill: pitch mnemonics fight
 copying, since on the air there is one tone and "the high short one" is a habit
 that has to break later. It's a way in, and the melody fades out on a slider.
 
-## Phase 5 — pileup / QRM (hardest)
+## Phase 5 — pileup / QRM ✅ done
 
 Two or three signals at once at different pitches — contest copy. This is the
 only item on the list that is an *audio engine* change rather than a practice

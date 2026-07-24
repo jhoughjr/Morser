@@ -41,7 +41,7 @@ public final class Player: ObservableObject {
     private let sidetoneState = SidetoneState()
 
     private(set) var renderer = MorseRenderer()
-    private var renderFormat: AVAudioFormat
+    private(set) var renderFormat: AVAudioFormat
 
     /// Frames in the transmission currently scheduled, for end-of-playback detection.
     private(set) var scheduledFrames: Int = 0
@@ -129,6 +129,16 @@ public final class Player: ObservableObject {
         transmission.scheduleBuffer(buffer, at: nil, options: [])
         transmission.play()
         return spans
+    }
+
+    /// Schedules an already-rendered buffer — the mix path, where the caller has
+    /// summed several voices into one buffer itself.
+    func schedule(buffer: AVAudioPCMBuffer, frames: Int) {
+        stop()
+        start()
+        scheduledFrames = frames
+        transmission.scheduleBuffer(buffer, at: nil, options: [])
+        transmission.play()
     }
 
     func stop() {

@@ -223,6 +223,13 @@ final class PracticeSession: ObservableObject {
         mode == .song ? AlphabetSong.pitch(for: character, fade: songFade) : nil
     }
 
+    /// The crowd for the current round, when the drill is a pileup.
+    ///
+    /// Built once at the start of the round and held, so the audio the view sends
+    /// is the same draw the prompt was taken from — regenerating it would send a
+    /// different crowd than the one you're being graded against.
+    private(set) var pileup: Pileup?
+
     /// Consecutive clean rounds that earn one more word per minute.
     static let ladderStreak = 3
     static let maximumWPM: Double = 40
@@ -327,6 +334,20 @@ final class PracticeSession: ObservableObject {
 
     /// Builds a fresh prompt and clears the previous answer.
     func startRound() {
+        // A pileup has to fix its crowd before the prompt is read, so the wanted
+        // call in the prompt and the wanted call in the audio are the same one.
+        if let pileupDrill = drill as? PileupDrill {
+            let crowd = pileupDrill.pileup(context)
+            pileup = crowd
+            prompt = crowd.wanted.callsign
+            answer = ""
+            grade = nil
+            fistReport = nil
+            phase = .sending
+            return
+        }
+        pileup = nil
+
         let text = drill.makePrompt(context)
         guard !text.isEmpty else {
             prompt = ""
