@@ -7,9 +7,7 @@ struct TimingDiagnosticsView: View {
     @State private var sweepStep = 0.005
     @State private var results: [(id:Int,ditTime: Double, expected: Double, actual: Double)] = []
     @State private var isTesting = false
-    @State private var bufferSize: Double = 128 // Default buffer size
-    @State private var customBuffer: Bool = false
-    
+
     var body: some View {
         VStack(alignment: .leading) {
             Text("Morse Timing Diagnostics")
@@ -36,19 +34,6 @@ struct TimingDiagnosticsView: View {
                 Slider(value: $sweepStep, in: 0.001...max(0.1, sweepEnd - sweepStart), step: 0.001)
                     .frame(maxWidth: 150)
                 Text(String(format: "%.3f", sweepStep))
-            }
-            Divider()
-            Toggle("Custom Buffer Size", isOn: $customBuffer)
-            if customBuffer {
-                HStack {
-                    Text("Buffer Size: ")
-                    Slider(value: $bufferSize, in: 32...1024, step: 32)
-                        .frame(maxWidth: 200)
-                    Text("\(Int(bufferSize)) frames")
-                }
-                Button("Apply Buffer Size") {
-                    player.setManualRenderingBufferSize(bytes:UInt32(bufferSize))
-                }
             }
             Divider()
             Button(isTesting ? "Testing..." : "Run Diagnostic") {

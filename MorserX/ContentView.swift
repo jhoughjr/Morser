@@ -40,27 +40,10 @@ struct Controllers {
             skipped = encoded.skipped
         }
 
-        public func convertToText() {
-            morseText = Morse.latin(from: self.morseCode)
-        }
     }
 }
 
 struct Views {
-
-    struct MorseSymbolView: View {
-        var symbol: Morse.Symbols
-
-        var body: some View {
-            switch symbol {
-            case .dit:   Text("dit")
-            case .dah:   Text("dah")
-            case .infraSpace:  Text("_")
-            case .letterSpace: Text("___")
-            case .wordSpace:   Text("_______")
-            }
-        }
-    }
 
     /// The lamp.
     ///
@@ -184,6 +167,7 @@ struct ContentView: View {
                     .imageScale(.medium)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("practiceButton")
             .help("Practice copying")
             .sheet(isPresented: $isShowingPractice) {
                 // Practice borrows the audio engine but not the strip; still, a
@@ -228,6 +212,7 @@ struct ContentView: View {
             TextField("Enter text...", text: $morseController.morseText,
                       prompt: Text("Hello, world!"))
                 .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("inputField")
 
             if !morseController.morseCode.isEmpty {
                 Text(morseController.morseCode)
