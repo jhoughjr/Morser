@@ -1,0 +1,17 @@
+Morser is a Morse code trainer for the Mac.
+
+It is built around copying by ear rather than reading dots and dashes off a
+screen. Characters are sent as tones at a speed you set, and you type what you
+hear.
+
+FEATURES
+
+• Practice drills — common words, callsigns, and plain text at your pace
+• Pileup — copy one station out of a crowd of them calling at once, the way a
+  real contest sounds
+• Keyer — send with your own fist and see how cleanly it decodes
+• Alphabet song — hear the whole character set in order while it sinks in
+• Timing diagnostics — see your dot/dash ratios and where your spacing drifts
+
+Every element has its own pitch, so characters stay distinguishable as speed
+goes up.
